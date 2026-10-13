@@ -14,8 +14,8 @@ android {
         applicationId = "es.peritaje.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.1.2"
+        versionCode = 5
+        versionName = "0.1.3"
     }
 
     // Clave de depuración fija (en el repositorio) para que cada APK nuevo se instale encima
@@ -45,6 +45,9 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
     }
 }
 
@@ -80,4 +83,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
     implementation("io.coil-kt:coil-compose:2.7.0")
+
+    // Pruebas de las migraciones de la base de datos (que una actualización nunca pierda datos).
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core:1.6.1")
 }

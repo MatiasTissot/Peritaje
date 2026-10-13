@@ -20,6 +20,7 @@ import java.time.ZonedDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.UUID
+import kotlin.math.abs
 import java.util.concurrent.TimeUnit
 
 class SinConfiguracion : Exception("Falta configurar la dirección del PC o el token")
@@ -88,27 +89,40 @@ class Repositorio(
             val finVentana = hoy.plusDays(diasVentana).atStartOfDay(zona).toInstant().toEpochMilli()
             fun enVentana(f: Long) = f in inicioHoy until finVentana
 
+            // Una entrada por visita; si el PC no manda id_visita, la visita se identifica por el encargo.
             val delIndice = api.indice().citas
-                .associate { it.idEncargo to aMillis(it.fechaHora) }
-                .filterValues(::enVentana)
-            val ids = LinkedHashSet<String>().apply {
-                addAll(delIndice.keys)
-                citas.noEnviadas().forEach { add(it.idEncargo) }
+                .map { Triple(it.idVisita ?: it.idEncargo, it.idEncargo, aMillis(it.fechaHora)) }
+                .filter { enVentana(it.third) }
+                .associateBy { it.first }
+
+            // Datos antiguos (una visita por encargo): se pasan al id de su visita sin perder nada.
+            if (delIndice.values.any { it.first != it.second }) {
+                for (local in citas.noEnviadas()) {
+                    if (local.idVisita != local.idEncargo) continue
+                    val nueva = delIndice.values
+                        .filter { it.second == local.idEncargo && it.first != it.second }
+                        .minByOrNull { abs(it.third - local.fechaHora) } ?: continue
+                    citas.cambiarId(local.idVisita, nueva.first)
+                }
             }
 
+            val ids = LinkedHashMap<String, String>()   // idVisita -> idEncargo
+            delIndice.values.forEach { ids[it.first] = it.second }
+            citas.noEnviadas().forEach { ids[it.idVisita] = it.idEncargo }
+
             var fallidas = 0
-            for (id in ids) {
+            for ((idVisita, idEncargo) in ids) {
                 try {
                     val detalle = try {
-                        api.detalle(id)
+                        if (idVisita == idEncargo) api.detalle(idEncargo) else api.visita(idVisita)
                     } catch (e: HttpException) {
                         if (e.code() == 404) null else throw e
                     }
-                    procesar(id, detalle, delIndice[id], ::enVentana, finVentana)
+                    procesar(idVisita, idEncargo, detalle, delIndice[idVisita]?.third, ::enVentana, finVentana)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    // Un encargo concreto falla: se sigue con el resto y se reintenta en la próxima.
+                    // Una visita concreta falla: se sigue con el resto y se reintenta en la próxima.
                     fallidas++
                 }
             }
@@ -129,7 +143,8 @@ class Repositorio(
     }
 
     private suspend fun procesar(
-        id: String, detalle: DetalleCita?, fechaIndice: Long?, enVentana: (Long) -> Boolean, finVentana: Long,
+        id: String, idEncargo: String, detalle: DetalleCita?, fechaIndice: Long?,
+        enVentana: (Long) -> Boolean, finVentana: Long,
     ) {
         val local = citas.obtener(id)
         val fecha = fechaIndice ?: detalle?.fechaVisita?.let(::aMillis)
@@ -152,12 +167,12 @@ class Repositorio(
         fecha!!
 
         when {
-            local == null -> if (enVentana(fecha)) citas.insertar(detalle.aCita(fecha))
+            local == null -> if (enVentana(fecha)) citas.insertar(detalle.aCita(id, idEncargo, fecha))
 
             local.estado == EstadoCita.ENVIADA -> {
-                // Nueva visita (otro día) de un encargo ya enviado: se vuelve a cargar en blanco.
-                if (fechaIndice != null && mismoDia(fecha, local.fechaHora).not() && fecha > local.fechaHora &&
-                    citas.reabrir(id) > 0
+                // Solo datos antiguos (una visita por encargo): nueva visita otro día de un encargo ya enviado.
+                if (id == idEncargo && fechaIndice != null && !mismoDia(fecha, local.fechaHora) &&
+                    fecha > local.fechaHora && citas.reabrir(id) > 0
                 ) actualizarDatos(local, detalle, fecha, null)
             }
 
@@ -184,7 +199,7 @@ class Repositorio(
 
     private suspend fun actualizarDatos(local: Cita, d: DetalleCita, fecha: Long, aviso: String?) {
         citas.actualizarDatosNotion(
-            id = local.idEncargo, fechaHora = fecha, direccion = d.direccion, asegurado = d.asegurado,
+            id = local.idVisita, fechaHora = fecha, direccion = d.direccion, asegurado = d.asegurado,
             telefono = d.telefonoContacto, tipo = d.tipoSiniestro, notasGabinete = d.notasGabinete, titulo = d.titulo,
             expCompania = d.expCompania, urlMaps = d.urlMaps, notasVisita = d.notasVisita,
             contactosJson = JsonApp.encodeToString(ListSerializer(ContactoDto.serializer()), d.contactos),
@@ -194,12 +209,12 @@ class Repositorio(
 
     /** Borra la visita solo si no hay nada capturado (ni checklist, ni fotos, ni una foto a medias). */
     private suspend fun borrarSiSinDatos(cita: Cita): Boolean {
-        if (cita.estado != EstadoCita.PENDIENTE || capturaEnCurso(cita.idEncargo)) return false
-        return citas.borrarSiVacia(cita.idEncargo) > 0
+        if (cita.estado != EstadoCita.PENDIENTE || capturaEnCurso(cita.idVisita)) return false
+        return citas.borrarSiVacia(cita.idVisita) > 0
     }
 
     suspend fun tieneDatos(cita: Cita): Boolean =
-        !cita.checklistVacio() || fotos.contar(cita.idEncargo) > 0 || capturaEnCurso(cita.idEncargo)
+        !cita.checklistVacio() || fotos.contar(cita.idVisita) > 0 || capturaEnCurso(cita.idVisita)
 
     suspend fun quitarAviso(id: String) = citas.quitarAviso(id)
 
@@ -219,7 +234,7 @@ class Repositorio(
     /** Autoguardado del borrador: solo toca las columnas del checklist, y solo mientras esté pendiente. */
     suspend fun guardarChecklist(cita: Cita) {
         citas.guardarChecklist(
-            id = cita.idEncargo, fechaOcurrencia = cita.fechaOcurrencia, causa = cita.causa,
+            id = cita.idVisita, fechaOcurrencia = cita.fechaOcurrencia, causa = cita.causa,
             hayCausante = cita.hayCausante, quienAtiende = cita.quienAtiende, testigos = cita.testigos,
             observaciones = cita.observacionesLibres,
         )
@@ -228,11 +243,11 @@ class Repositorio(
     /** "Finalizar visita": bloquea el checklist y deja el avance (y en el futuro las fotos) en cola. */
     suspend fun finalizarVisita(id: String): Boolean {
         val hecho = citas.finalizar(id, System.currentTimeMillis(), UUID.randomUUID().toString()) > 0
-        if (hecho) subidorFotos.encolar(id)
+        if (hecho) citas.obtener(id)?.let { subidorFotos.encolar(it.idVisita, it.idEncargo) }
         return hecho
     }
 
-    suspend fun idsVisitadas(): List<String> = citas.visitadas().map { it.idEncargo }
+    suspend fun idsVisitadas(): List<String> = citas.visitadas().map { it.idVisita }
 
     // --- envío del avance (POST /avance) ------------------------------------
 
@@ -246,6 +261,7 @@ class Repositorio(
                     fechaVisitaRealizada = aIso(cita.fechaVisitaRealizada ?: System.currentTimeMillis()),
                     textoAvance = textoAvance(cita, fotos.contar(id)),
                     idEnvio = cita.idEnvio,
+                    idVisita = cita.idVisita.takeIf { it != cita.idEncargo },
                 )
             )
             if (respuesta.estado == "ok") {
@@ -324,7 +340,8 @@ class Repositorio(
     }
 }
 
-private fun DetalleCita.aCita(fechaIndice: Long) = Cita(
+private fun DetalleCita.aCita(idVisita: String, idEncargo: String, fechaIndice: Long) = Cita(
+    idVisita = idVisita,
     idEncargo = idEncargo,
     fechaHora = fechaIndice,
     direccion = direccion,

@@ -172,7 +172,7 @@ fun PantallaCitas(vm: CitasViewModel, abrirCita: (String) -> Unit, abrirAjustes:
                             )
                         }
                     }
-                    item(key = r.cita.idEncargo) { TarjetaCita(r) { abrirCita(r.cita.idEncargo) } }
+                    item(key = r.cita.idVisita) { TarjetaCita(r) { abrirCita(r.cita.idVisita) } }
                 }
             }
         }

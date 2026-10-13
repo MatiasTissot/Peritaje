@@ -28,16 +28,28 @@ jobs:
         run: |
           chmod +x gradlew
           set +e
-          ./gradlew assembleDebug --no-daemon --console=plain 2>&1 | tee build.log
+          ./gradlew testDebugUnitTest assembleDebug --no-daemon --console=plain 2>&1 | tee build.log
           estado=${PIPESTATUS[0]}
           if [ "$estado" -ne 0 ]; then
             # Resumen de errores como anotación, para poder leerlo sin descargar el log completo.
-            resumen=$( (grep -E "^e: |error:|What went wrong|> " build.log | head -60; echo ---; tail -40 build.log) | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            resumen=$( (grep -E "^e: |error:|What went wrong|> |FAILED|Exception|AssertionError" build.log | head -60; echo ---; tail -40 build.log) | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
             echo "::error title=Compilación fallida::${resumen}"
           fi
           exit $estado
       - if: failure()
         run: echo "::error title=Paso fallido::java=${{ steps.java.outcome }} compilar=${{ steps.compilar.outcome }} ANDROID_HOME=$ANDROID_HOME"
+      # Room genera el esquema de la base del móvil (app/schemas). Se guarda en el repositorio
+      # para escribir y probar las migraciones de futuras versiones.
+      - name: Guardar esquema de la base de datos
+        if: github.ref == 'refs/heads/main'
+        run: |
+          if [ -n "$(git status --porcelain app/schemas)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+            git add app/schemas
+            git commit -m "Esquema de la base de datos del móvil (generado por la compilación)"
+            git push || echo "::warning title=Esquema::No se pudo guardar el esquema en el repositorio"
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: peritaje-debug-apk

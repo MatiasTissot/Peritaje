@@ -12,9 +12,19 @@ enum class EstadoCita { PENDIENTE, VISITADA, ENVIADA }
 /** Estado de subida a Drive. Hasta que exista el módulo de Drive, todas quedan en PENDIENTE. */
 enum class EstadoSubida { PENDIENTE, SUBIENDO, SUBIDA, ERROR }
 
-@Entity(tableName = "cita")
+/**
+ * Una visita (página de la base Visitas de Notion). Un encargo puede tener N visitas,
+ * cada una con su checklist, sus fotos y su avance.
+ */
+@Entity(tableName = "cita", indices = [Index("idEncargo")])
 data class Cita(
-    @PrimaryKey val idEncargo: String,
+    /**
+     * Id de la página de la visita en Notion. En datos antiguos (o si el PC aún no manda
+     * id_visita) es igual a [idEncargo].
+     */
+    @PrimaryKey val idVisita: String,
+    /** Expediente (Exp_Gabinete), p. ej. MA26036021. */
+    val idEncargo: String,
     /** Fecha y hora de la visita (epoch millis). */
     val fechaHora: Long,
     val direccion: String,
@@ -43,8 +53,6 @@ data class Cita(
     /** Identificador único del envío del avance, para que un reintento no lo duplique en Notion. */
     val idEnvio: String? = null,
     val ultimoError: String? = null,
-    /** Sin uso desde la v0.1.2 (antes: cambio de fecha pendiente de decidir). Se mantiene por compatibilidad. */
-    val fechaHoraNueva: Long? = null,
     /** La visita se anuló o borró en Notion, pero tiene datos sin enviar: se conserva hasta que el perito decida. */
     @ColumnInfo(defaultValue = "0") val anulada: Boolean = false,
     /** Aviso para el perito sobre cambios hechos en Notion (fecha movida, anulada...). */
@@ -59,17 +67,20 @@ data class Cita(
     tableName = "foto",
     foreignKeys = [ForeignKey(
         entity = Cita::class,
-        parentColumns = ["idEncargo"],
-        childColumns = ["idEncargo"],
+        parentColumns = ["idVisita"],
+        childColumns = ["idVisita"],
         onDelete = ForeignKey.CASCADE,
     )],
-    indices = [Index("idEncargo")],
+    indices = [Index("idVisita"), Index("idEncargo")],
 )
 data class FotoPendiente(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val idVisita: String,
+    /** Expediente, para la subida a Drive. */
     val idEncargo: String,
     val uriMediastore: String,
     val nombreArchivo: String,
+    /** Orden dentro de la visita (el nombre del archivo es la fecha y hora). */
     val numero: Int,
     val estadoSubida: EstadoSubida = EstadoSubida.PENDIENTE,
     val intentos: Int = 0,

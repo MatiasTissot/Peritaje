@@ -177,7 +177,7 @@ fun PantallaDetalle(vm: DetalleViewModel, volver: () -> Unit, irA: (String) -> U
                 },
                 title = {
                     Column {
-                        Text(vm.id, style = MaterialTheme.typography.titleMedium)
+                        Text(c?.idEncargo.orEmpty(), style = MaterialTheme.typography.titleMedium)
                         c?.let {
                             Text(Repositorio.fechaHoraLegible(it.fechaHora), style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -298,7 +298,7 @@ private fun DialogoDescartar(vm: DetalleViewModel, context: Context, cerrar: () 
             TextButton(onClick = {
                 vm.textoAvance()?.let { texto ->
                     context.getSystemService(ClipboardManager::class.java)
-                        ?.setPrimaryClip(ClipData.newPlainText("Avance ${vm.id}", texto))
+                        ?.setPrimaryClip(ClipData.newPlainText("Avance", texto))
                 }
                 cerrar()
                 vm.descartarAnulada(volver)

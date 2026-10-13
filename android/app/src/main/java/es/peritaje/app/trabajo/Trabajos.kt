@@ -44,7 +44,7 @@ class EnviarAvanceWorker(ctx: Context, params: WorkerParameters) : CoroutineWork
     }
 
     companion object {
-        const val CLAVE_ID = "id_encargo"
+        const val CLAVE_ID = "id_encargo" // guarda el id de la visita; el nombre se mantiene por los trabajos ya encolados
     }
 }
 
@@ -86,13 +86,13 @@ object Planificador {
         )
     }
 
-    fun enviarAvance(context: Context, idEncargo: String) {
+    fun enviarAvance(context: Context, idVisita: String) {
         WorkManager.getInstance(context).enqueueUniqueWork(
-            "avance-$idEncargo", ExistingWorkPolicy.KEEP,
+            "avance-$idVisita", ExistingWorkPolicy.KEEP,
             OneTimeWorkRequestBuilder<EnviarAvanceWorker>()
                 .setConstraints(conRed)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
-                .setInputData(workDataOf(EnviarAvanceWorker.CLAVE_ID to idEncargo))
+                .setInputData(workDataOf(EnviarAvanceWorker.CLAVE_ID to idVisita))
                 .build(),
         )
     }

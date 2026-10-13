@@ -35,7 +35,7 @@ class DetalleViewModel(app: Application, val id: String) : AndroidViewModel(app)
 
     /** Citas activas en orden, para saltar a la anterior / siguiente sin volver a la lista. */
     val vecinas: StateFlow<Pair<String?, String?>> = repo.resumenes.map { lista ->
-        val ids = lista.filter { it.cita.estado != EstadoCita.ENVIADA }.map { it.cita.idEncargo }
+        val ids = lista.filter { it.cita.estado != EstadoCita.ENVIADA }.map { it.cita.idVisita }
         val i = ids.indexOf(id)
         if (i < 0) null to null else ids.getOrNull(i - 1) to ids.getOrNull(i + 1)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null to null)

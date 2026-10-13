@@ -21,8 +21,13 @@ interface PcApi {
     @GET("citas-index")
     suspend fun indice(): IndiceCitas
 
+    /** Detalle de la visita "elegida" de un encargo. Solo para datos antiguos o un PC sin id_visita. */
     @GET("citas/{id}")
     suspend fun detalle(@Path("id") idEncargo: String): DetalleCita
+
+    /** Detalle de una visita concreta (página de Visitas) con los datos de su encargo. 404 si se borró. */
+    @GET("visitas/{id}")
+    suspend fun visita(@Path("id") idVisita: String): DetalleCita
 
     @POST("avance")
     suspend fun avance(@Body avance: Avance): RespuestaEstado
@@ -34,6 +39,8 @@ data class IndiceCitas(val citas: List<EntradaIndice>)
 @Serializable
 data class EntradaIndice(
     @SerialName("id_encargo") val idEncargo: String,
+    /** Una entrada por visita. Si el PC aún no lo manda, la app trabaja con una visita por encargo. */
+    @SerialName("id_visita") val idVisita: String? = null,
     @SerialName("fecha_hora") val fechaHora: String,
 )
 
@@ -48,6 +55,7 @@ data class ContactoDto(
 @Serializable
 data class DetalleCita(
     @SerialName("id_encargo") val idEncargo: String,
+    @SerialName("id_visita") val idVisita: String? = null,
     @SerialName("fecha_visita") val fechaVisita: String? = null,
     val direccion: String = "",
     val asegurado: String = "",
@@ -68,6 +76,7 @@ data class Avance(
     @SerialName("fecha_visita_realizada") val fechaVisitaRealizada: String,
     @SerialName("texto_avance") val textoAvance: String,
     @SerialName("id_envio") val idEnvio: String? = null,
+    @SerialName("id_visita") val idVisita: String? = null,
 )
 
 @Serializable
