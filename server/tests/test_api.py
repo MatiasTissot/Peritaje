@@ -223,3 +223,22 @@ def test_escritura_no_se_reintenta_ante_5xx():
     with pytest.raises(NotionError):
         n.anadir_hijos("b", [{"type": "divider", "divider": {}}])
     assert llamadas == ["PATCH"]
+
+
+def test_detalle_de_encargo_borrado_da_404(entorno):
+    cliente, fake, _ = entorno
+    cliente.get("/citas-index", headers=H)  # deja el id en caché
+    assert cliente.get("/citas/MA26043441", headers=H).status_code == 200
+    fake.paginas["p1"]["in_trash"] = True
+    assert cliente.get("/citas/MA26043441", headers=H).status_code == 404
+    # Sale de la caché: si vuelve a la vida en Notion, se encuentra de nuevo.
+    fake.paginas["p1"].pop("in_trash")
+    assert cliente.get("/citas/MA26043441", headers=H).status_code == 200
+    fake.paginas["p1"]["archived"] = True
+    assert cliente.get("/citas/MA26043441", headers=H).status_code == 404
+
+
+def test_detalle_de_encargo_anulado_sigue_respondiendo(entorno):
+    cliente, _, _ = entorno
+    d = cliente.get("/citas/MA26000002", headers=H)
+    assert d.status_code == 200 and d.json()["estado_notion"] == "ANULADO"

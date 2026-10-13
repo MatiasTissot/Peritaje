@@ -118,11 +118,12 @@ class Servicio:
         único: es preferible dar error a escribir en el expediente equivocado.
         """
         if _HEX32.match(id_encargo):
-            return self.notion.pagina(id_encargo)
+            return self._vigente(id_encargo, self.notion.pagina(id_encargo))
         if exacto:
             candidatos = self.notion.consultar(
                 self.cfg.db_encargos, {"property": "Exp_Gabinete", "rich_text": {"contains": id_encargo}})
-            res = [c for c in candidatos if self.id_legible(c) == id_encargo]
+            res = [c for c in candidatos if self.id_legible(c) == id_encargo
+                   and not (c.get("archived") or c.get("in_trash"))]
             if len(res) > 1:
                 raise EncargoNoEncontrado(
                     f"Hay {len(res)} encargos con el expediente {id_encargo} en Notion; no se escribe el avance")
@@ -131,7 +132,7 @@ class Servicio:
             return res[0]
         page_id = self._ids.get(id_encargo)
         if page_id:
-            return self.notion.pagina(page_id)
+            return self._vigente(id_encargo, self.notion.pagina(page_id))
         for filtro in (
             {"property": "Exp_Gabinete", "rich_text": {"equals": id_encargo}},
             {"property": "Exp_Gabinete", "rich_text": {"contains": id_encargo}},
@@ -140,8 +141,15 @@ class Servicio:
             res = self.notion.consultar(self.cfg.db_encargos, filtro)
             if res:
                 self._ids[id_encargo] = res[0]["id"]
-                return res[0]
+                return self._vigente(id_encargo, res[0])
         raise EncargoNoEncontrado(f"No se encontró el encargo {id_encargo} en Notion")
+
+    def _vigente(self, id_encargo: str, pagina: dict) -> dict:
+        """Un encargo borrado (papelera) cuenta como no encontrado, para que desaparezca del móvil."""
+        if pagina.get("archived") or pagina.get("in_trash"):
+            self._ids.pop(id_encargo, None)
+            raise EncargoNoEncontrado(f"El encargo {id_encargo} está borrado en Notion")
+        return pagina
 
     # GET /citas-index
 
