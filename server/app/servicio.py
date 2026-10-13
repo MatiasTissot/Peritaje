@@ -9,11 +9,17 @@ Estructura de Notion usada (workspace "Gestión de Encargos - Peritaciones"):
 El identificador que ve el móvil (id_encargo) es el Exp_Gabinete, p. ej. MA26043441.
 Si un encargo no lo tiene, se usa el id de la página de Notion sin guiones.
 """
+from __future__ import annotations
+
 import json
 import re
 import threading
 from datetime import datetime, time, timedelta
-from zoneinfo import ZoneInfo
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # Python 3.8 (Xubuntu 20.04)
+    from backports.zoneinfo import ZoneInfo
 
 from .config import Config
 from .notion import Notion
@@ -105,12 +111,27 @@ class Servicio:
         exp = _NO_SEGURO.sub("", prop(encargo, "Exp_Gabinete") or "")
         return exp or encargo["id"].replace("-", "")
 
-    def _resolver(self, id_encargo: str) -> dict:
+    def _resolver(self, id_encargo: str, exacto: bool = False) -> dict:
+        """Busca la página del encargo.
+
+        Con `exacto` (para escribir el avance) solo vale un Exp_Gabinete idéntico y
+        único: es preferible dar error a escribir en el expediente equivocado.
+        """
+        if _HEX32.match(id_encargo):
+            return self.notion.pagina(id_encargo)
+        if exacto:
+            candidatos = self.notion.consultar(
+                self.cfg.db_encargos, {"property": "Exp_Gabinete", "rich_text": {"contains": id_encargo}})
+            res = [c for c in candidatos if self.id_legible(c) == id_encargo]
+            if len(res) > 1:
+                raise EncargoNoEncontrado(
+                    f"Hay {len(res)} encargos con el expediente {id_encargo} en Notion; no se escribe el avance")
+            if not res:
+                raise EncargoNoEncontrado(f"No se encontró el encargo {id_encargo} en Notion")
+            return res[0]
         page_id = self._ids.get(id_encargo)
         if page_id:
             return self.notion.pagina(page_id)
-        if _HEX32.match(id_encargo):
-            return self.notion.pagina(id_encargo)
         for filtro in (
             {"property": "Exp_Gabinete", "rich_text": {"equals": id_encargo}},
             {"property": "Exp_Gabinete", "rich_text": {"contains": id_encargo}},
@@ -238,6 +259,13 @@ class Servicio:
                     pendientes.append((b["id"], nivel + 1))
         return None
 
+    def _ya_en_notion(self, padre: str, ref: str) -> bool:
+        for b in self.notion.hijos(padre):
+            datos = b.get(b.get("type", ""), {}) or {}
+            if _texto(datos.get("rich_text")).endswith(ref.strip()):
+                return True
+        return False
+
     @staticmethod
     def _parrafo(texto: str, negrita: bool = False) -> dict:
         trozos = [texto[i:i + 1900] for i in range(0, len(texto), 1900)] or [""]
@@ -250,13 +278,18 @@ class Servicio:
         with self._lock:
             if id_envio and self._ya_enviado(id_envio):
                 return "ya_registrado"
-            encargo = self._resolver(id_encargo)
+            encargo = self._resolver(id_encargo, exacto=True)
             try:
                 visita = self._a_local(fecha_visita_realizada).strftime("%d/%m/%Y %H:%M")
             except ValueError:
                 visita = fecha_visita_realizada
             recibido = self._hoy().strftime("%d/%m/%Y %H:%M")
-            bloques = [self._parrafo(f"Avance desde la app · visita {visita} · recibido {recibido}", negrita=True)]
+            # La referencia del envío va en la cabecera para reconocer un avance ya escrito
+            # aunque se haya perdido el registro local (p. ej. Notion aplicó la escritura
+            # pero la respuesta no llegó).
+            ref = f" · ref {id_envio}" if id_envio else ""
+            cabecera = f"Avance desde la app · visita {visita} · recibido {recibido}{ref}"
+            bloques = [self._parrafo(cabecera, negrita=True)]
             bloques += [self._parrafo(linea) for linea in texto.splitlines()]
             bloques.append({"object": "block", "type": "divider", "divider": {}})
 
@@ -275,6 +308,9 @@ class Servicio:
             else:
                 # Con encabezado normal se inserta justo debajo (lo más reciente arriba).
                 padre, after = destino
+                if id_envio and self._ya_en_notion(padre, ref):
+                    self._apuntar_envio(id_envio)
+                    return "ya_registrado"
                 self.notion.anadir_hijos(padre, bloques, after=after)
             if id_envio:
                 self._apuntar_envio(id_envio)

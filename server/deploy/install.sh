@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
-# Instala el servidor en el PC (Xubuntu). Ejecutar desde la carpeta server/:
+# Instala o actualiza el servidor en el PC (Xubuntu). Ejecutar desde la carpeta server/:
 #   sudo bash deploy/install.sh
 set -euo pipefail
 
 [ "$(id -u)" -eq 0 ] || { echo "Ejecuta con sudo"; exit 1; }
 ORIGEN="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Python 3.8 o mayor (Xubuntu 20.04 en adelante).
+if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 8))' 2>/dev/null; then
+  echo "!! Hace falta Python 3.8 o mayor y este PC tiene: $(python3 --version 2>&1 || echo 'ninguno')"
+  echo "!! Instala Xubuntu 20.04 o posterior (mejor 22.04 o 24.04) y vuelve a ejecutar el instalador."
+  exit 1
+fi
 
 # Paquetes necesarios (si ya están, no hace nada).
 apt-get update -qq && apt-get install -y -qq python3-venv openssl >/dev/null
@@ -21,19 +28,45 @@ chown -R peritaje:peritaje /opt/peritaje /var/lib/peritaje
 if [ ! -f /etc/peritaje/peritaje.env ]; then
   cp "$ORIGEN/deploy/peritaje.env.example" /etc/peritaje/peritaje.env
   sed -i "s/^APP_TOKEN=.*/APP_TOKEN=$(openssl rand -hex 32)/" /etc/peritaje/peritaje.env
-  echo ">> Edita /etc/peritaje/peritaje.env y pon tu NOTION_TOKEN, luego: sudo systemctl restart peritaje"
 fi
 chown root:peritaje /etc/peritaje/peritaje.env
 chmod 640 /etc/peritaje/peritaje.env
 
 cp "$ORIGEN/deploy/peritaje.service" /etc/systemd/system/peritaje.service
 systemctl daemon-reload
-systemctl enable --now peritaje
-systemctl --no-pager status peritaje | head -5
+systemctl enable peritaje >/dev/null 2>&1
+# restart (no "enable --now") para que una actualización cargue el código nuevo.
+systemctl restart peritaje || true
+sleep 3
+if systemctl is-active --quiet peritaje; then
+  echo ">> Servicio peritaje en marcha"
+else
+  echo ">> El servicio aún no arranca: es normal si falta el NOTION_TOKEN."
+fi
+if ! grep -q '^NOTION_TOKEN=.\+' /etc/peritaje/peritaje.env; then
+  echo ">> Edita /etc/peritaje/peritaje.env y pon tu NOTION_TOKEN, luego: sudo systemctl restart peritaje"
+fi
 
+# Cortafuegos: el puerto 8000 solo por Tailscale. Si el SSH está en uso, se deja
+# permitido antes de que nadie active ufw, para no perder el acceso remoto.
 if command -v ufw >/dev/null; then
   ufw allow in on tailscale0 to any port 8000 proto tcp >/dev/null
-  echo ">> Puerto 8000 abierto solo en la interfaz de Tailscale"
+  if systemctl is-active --quiet ssh 2>/dev/null; then
+    ufw allow OpenSSH >/dev/null
+    echo ">> SSH permitido en el cortafuegos"
+  fi
+  if ufw status | grep -q "Status: active"; then
+    echo ">> Cortafuegos activo: el puerto 8000 solo se abre por Tailscale"
+  else
+    echo ">> Regla del puerto 8000 preparada, pero el cortafuegos está INACTIVO."
+    echo ">> Actívalo con: sudo ufw enable   (mientras tanto el puerto 8000 se ve desde la wifi de casa)"
+  fi
+else
+  echo ">> ufw no está instalado: el puerto 8000 queda abierto en todas las redes."
+  echo ">> Instálalo con: sudo apt install -y ufw   y vuelve a ejecutar este instalador."
 fi
+
+echo
 echo ">> Token de la app (cópialo en Ajustes de la app):"
 grep '^APP_TOKEN=' /etc/peritaje/peritaje.env | cut -d= -f2
+echo ">> Si lo pierdes, se vuelve a ver con: sudo grep APP_TOKEN /etc/peritaje/peritaje.env"

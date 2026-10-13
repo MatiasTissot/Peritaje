@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Config
 from app.main import crear_app
+from app.notion import NotionError
 from app.servicio import Servicio
 
 TOKEN = "secreto-de-prueba"
@@ -77,6 +78,10 @@ class FakeNotion:
 
     def anadir_hijos(self, bid, bloques, after=None):
         self.anadidos.append((bid, bloques, after))
+        for b in bloques:
+            for t in b.get(b["type"], {}).get("rich_text", []):
+                t.setdefault("plain_text", t["text"]["content"])
+        self.bloques.setdefault(bid, []).extend(bloques)
         return {"results": []}
 
 
@@ -164,3 +169,57 @@ def test_avance_encargo_inexistente(entorno):
     r = cliente.post("/avance", headers=H, json={"id_encargo": "NOEXISTE",
                      "fecha_visita_realizada": "2026-09-28T10:15:00", "texto_avance": "x"})
     assert r.json()["estado"] == "error" and "NOEXISTE" in r.json()["detalle"]
+
+
+def test_avance_no_se_duplica_si_se_pierde_el_registro(entorno, tmp_path):
+    cliente, fake, _ = entorno
+    cuerpo = {"id_encargo": "MA26043441", "fecha_visita_realizada": "2026-09-28T10:15:00",
+              "texto_avance": "x", "id_envio": "env-1"}
+    assert cliente.post("/avance", json=cuerpo, headers=H).json() == {"estado": "ok"}
+    (tmp_path / "envios.json").unlink()
+    assert cliente.post("/avance", json=cuerpo, headers=H).json() == {"estado": "ok"}
+    assert len(fake.anadidos) == 1
+
+
+def test_avance_no_escribe_si_el_expediente_esta_repetido(entorno):
+    cliente, fake, _ = entorno
+    fake.paginas["p3"] = encargo("p3", "MA26043441")
+    r = cliente.post("/avance", headers=H, json={"id_encargo": "MA26043441",
+                     "fecha_visita_realizada": "2026-09-28T10:15:00", "texto_avance": "x"})
+    assert r.json()["estado"] == "error" and not fake.anadidos
+
+
+def test_avance_no_usa_coincidencia_parcial(entorno):
+    cliente, fake, _ = entorno
+    r = cliente.post("/avance", headers=H, json={"id_encargo": "MA2604344",
+                     "fecha_visita_realizada": "2026-09-28T10:15:00", "texto_avance": "x"})
+    assert r.json()["estado"] == "error" and not fake.anadidos
+
+
+def test_sin_conexion_con_notion_da_error_claro():
+    import httpx
+    from app.notion import Notion
+
+    def caido(request):
+        raise httpx.ConnectError("sin red")
+
+    n = Notion("x")
+    n._http = httpx.Client(base_url="https://api.notion.com/v1", transport=httpx.MockTransport(caido))
+    with pytest.raises(NotionError, match="Sin conexión"):
+        n.anadir_hijos("b", [{"type": "divider", "divider": {}}])
+
+
+def test_escritura_no_se_reintenta_ante_5xx():
+    import httpx
+    from app.notion import Notion
+    llamadas = []
+
+    def falla(request):
+        llamadas.append(request.method)
+        return httpx.Response(502)
+
+    n = Notion("x")
+    n._http = httpx.Client(base_url="https://api.notion.com/v1", transport=httpx.MockTransport(falla))
+    with pytest.raises(NotionError):
+        n.anadir_hijos("b", [{"type": "divider", "divider": {}}])
+    assert llamadas == ["PATCH"]

@@ -6,8 +6,11 @@ Endpoints (todos con Authorization: Bearer <APP_TOKEN>):
   POST /avance               escribe el avance en el bloque AVANCE APP del encargo
   GET  /salud                comprobación de conexión desde la app
 """
+from __future__ import annotations
+
 import hmac
 import logging
+from typing import Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
@@ -24,10 +27,10 @@ class AvanceIn(BaseModel):
     fecha_visita_realizada: str
     texto_avance: str
     # Opcional: identificador único del envío para que un reintento no duplique el avance.
-    id_envio: str | None = None
+    id_envio: Optional[str] = None
 
 
-def crear_app(servicio: Servicio | None = None, app_token: str | None = None) -> FastAPI:
+def crear_app(servicio: Optional[Servicio] = None, app_token: Optional[str] = None) -> FastAPI:
     if servicio is None:
         cfg = config.cargar()
         servicio = Servicio(cfg, Notion(cfg.notion_token))

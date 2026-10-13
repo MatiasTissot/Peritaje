@@ -1,8 +1,10 @@
 """Configuración del servidor, leída de variables de entorno.
 
 Las credenciales (token de Notion y token de la app) nunca van en el código ni
-en git: se cargan desde /etc/peritaje/peritaje.env (ver deploy/) con permisos 600.
+en git: se cargan desde /etc/peritaje/peritaje.env (ver deploy/) con permisos 640.
 """
+from __future__ import annotations
+
 import os
 from dataclasses import dataclass, field
 from pathlib import Path

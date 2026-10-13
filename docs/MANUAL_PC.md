@@ -37,6 +37,18 @@ Necesitas:
 - Pulsa **Enter** después de cada orden y espera a que vuelva a aparecer el cursor.
 - Cuando una orden empieza por `sudo`, te pedirá **tu contraseña** del PC. Al escribirla no se ve nada en pantalla: es normal. Escríbela y pulsa Enter.
 
+### Comprobación previa (1 minuto)
+
+Antes de nada, pega esto en el Terminal:
+
+```
+lsb_release -d; python3 --version; uname -m
+```
+
+- La versión de Xubuntu tiene que ser **20.04 o posterior** (mejor 22.04 o 24.04).
+- `Python` tiene que ser **3.8 o mayor**. Si sale 3.6 o menos, o "orden no encontrada", el sistema es demasiado antiguo: hay que instalar un Xubuntu más nuevo antes de seguir.
+- La última línea debe decir `x86_64`. Si dice `i686` o `i386` (PC de 32 bits), para aquí y avísame: puede que alguna pieza no se instale.
+
 ---
 
 ## Paso 1. Poner el sistema al día
@@ -102,10 +114,15 @@ El instalador hace todo solo: instala lo necesario, crea el servicio `peritaje` 
 Al final verás algo así:
 
 ```
+>> El servicio aún no arranca: es normal si falta el NOTION_TOKEN.
 >> Edita /etc/peritaje/peritaje.env y pon tu NOTION_TOKEN, luego: sudo systemctl restart peritaje
+>> Regla del puerto 8000 preparada, pero el cortafuegos está INACTIVO.
+...
 >> Token de la app (cópialo en Ajustes de la app):
 3f9a1c...(64 letras y números)
 ```
+
+Los avisos de "aún no arranca" y "cortafuegos INACTIVO" son normales en este punto: se arreglan en los pasos 6 y 8.
 
 **Apunta ese token de la app**; lo necesitas en el paso 9. Si lo pierdes, se puede volver a ver con:
 
@@ -175,7 +192,15 @@ Saldrá algo como `100.101.102.103`. **Apúntala.**
 
 **Recomendado: que el PC no caduque.** Tailscale pide volver a iniciar sesión en cada equipo cada pocos meses. Para que el PC no se quede desconectado sin avisar: entra en <https://login.tailscale.com/admin/machines>, en la fila del PC pulsa `···` → **Disable key expiry**.
 
-**Cerrar el PC a todo lo demás.** Activa el cortafuegos para que el PC solo acepte la app a través de Tailscale:
+**Cerrar el PC a todo lo demás.** Activa el cortafuegos para que el PC solo acepte la app a través de Tailscale.
+
+Si entras al PC por **SSH** desde otro ordenador, primero asegúrate de no cortarte el acceso (el instalador ya lo hace si el SSH está en marcha, pero no está de más repetirlo):
+
+```
+sudo ufw allow OpenSSH
+```
+
+Después activa el cortafuegos:
 
 ```
 sudo ufw enable
@@ -215,6 +240,7 @@ El token se guarda **cifrado** en el móvil.
 2. Pulsa **Finalizar visita** → **Finalizar y enviar**.
 3. En unos segundos el icono de la visita pasa a verde (✓ Enviada) y desaparece de "Activas" (la verás en el filtro "Enviadas").
 4. En Notion, abre ese encargo: el texto aparece bajo **AVANCE APP**. Si la página no tenía ese bloque, el PC crea un desplegable "AVANCE APP" al final de la página.
+5. Fíjate en **dónde** ha aparecido. Si en tu plantilla "AVANCE APP" es una **pestaña** y el texto ha salido en un desplegable al final de la página, es que Notion no deja ver las pestañas desde fuera: en ese caso usa un encabezado o desplegable llamado exactamente `AVANCE APP` en vez de una pestaña, y avísame.
 
 > Para la prueba usa un encargo que no te importe, o borra después el texto de prueba en Notion.
 
@@ -237,6 +263,9 @@ Listo. A partir de aquí el PC funciona solo: arranca al encenderlo, y la app si
 | Ver el cortafuegos | `sudo ufw status` |
 
 ### Problemas típicos
+
+**Al instalar sale `Hace falta Python 3.8 o mayor`.**
+El Xubuntu del PC es demasiado antiguo (anterior a 20.04). Hay que instalar Xubuntu 22.04 o 24.04 y empezar de nuevo.
 
 **Al instalar sale `Ejecuta con sudo`.**
 Falta `sudo` delante: `sudo bash deploy/install.sh`.
@@ -293,7 +322,7 @@ El servicio y Tailscale arrancan solos. Si no conecta, mira `systemctl status pe
 Cuando haya una versión nueva del servidor:
 
 1. Repite el **paso 4** (bajar el ZIP y descomprimirlo; sobrescribe la carpeta).
-2. Ejecuta otra vez el **paso 5**.
+2. Ejecuta otra vez el **paso 5**. El instalador reinicia el servicio, así que el código nuevo funciona al momento.
 
 Tu configuración (tokens) se conserva: el instalador no toca `/etc/peritaje/peritaje.env` si ya existe.
 
