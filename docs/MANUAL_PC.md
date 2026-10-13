@@ -6,6 +6,18 @@ No hace falta saber programar. Solo hay que copiar y pegar órdenes en el **Term
 
 **Tiempo aproximado:** 30-45 minutos.
 
+### Cómo encaja todo
+
+```
+Móvil (app)  ──Tailscale──>  PC (servidor)  ──Internet──>  Notion
+```
+
+- La app **nunca** habla con Notion: todo pasa por el PC. Sin el PC encendido y conectado, la app no puede traer visitas ni enviar avances (lo que hagas en la visita se guarda en el móvil y se envía cuando el PC vuelva a responder).
+- Hay **dos llaves distintas**, no las mezcles:
+  - **Token de Notion**: deja al PC entrar en tu Notion. Solo vive en el PC.
+  - **Token de la app**: la contraseña que el móvil da al PC. Lo genera el instalador.
+- No pegues estos tokens en chats, correos que guardes ni capturas que compartas.
+
 ---
 
 ## Antes de empezar
@@ -32,7 +44,7 @@ Necesitas:
 Pega esto en el Terminal:
 
 ```
-sudo apt update && sudo apt upgrade -y && sudo apt install -y curl unzip
+sudo apt update && sudo apt upgrade -y && sudo apt install -y curl unzip ufw
 ```
 
 Puede tardar varios minutos. Si al final pide reiniciar, reinicia y vuelve a abrir el Terminal.
@@ -47,6 +59,7 @@ El PC tiene que estar siempre encendido, porque la app le habla a cualquier hora
 2. Pestaña *Sistema*: en "Cuando esté inactivo" pon **Nunca** (en *Suspender* y en *Hibernar*).
 3. Si es un portátil, en "Al cerrar la tapa" elige **Bloquear pantalla** o **No hacer nada** (no "Suspender").
 4. Pestaña *Pantalla*: puedes dejar que la pantalla se apague, eso no molesta.
+5. Opcional pero recomendable: en la BIOS del PC busca una opción tipo *Restore on AC Power Loss* / *After Power Failure* y ponla en **Power On**, para que el PC se encienda solo después de un corte de luz.
 
 ---
 
@@ -162,6 +175,24 @@ Saldrá algo como `100.101.102.103`. **Apúntala.**
 
 **Recomendado: que el PC no caduque.** Tailscale pide volver a iniciar sesión en cada equipo cada pocos meses. Para que el PC no se quede desconectado sin avisar: entra en <https://login.tailscale.com/admin/machines>, en la fila del PC pulsa `···` → **Disable key expiry**.
 
+**Cerrar el PC a todo lo demás.** Activa el cortafuegos para que el PC solo acepte la app a través de Tailscale:
+
+```
+sudo ufw enable
+```
+
+Responde `s` (o `y`) si pregunta. Comprueba la regla que dejó el instalador:
+
+```
+sudo ufw status
+```
+
+Debe aparecer una línea con `8000/tcp on tailscale0` y `ALLOW`. Si no aparece:
+
+```
+sudo ufw allow in on tailscale0 to any port 8000 proto tcp
+```
+
 ---
 
 ## Paso 9. Conectar la app
@@ -170,7 +201,7 @@ En el móvil, con Tailscale activado:
 
 1. Abre la app **Peritaje** → icono del **engranaje** (arriba a la derecha).
 2. **Dirección del PC:** `http://` + la IP del paso 8 + `:8000`. Ejemplo: `http://100.101.102.103:8000`.
-3. **Token:** el token de la app del paso 5. Lo más cómodo es enviártelo por un medio privado (por ejemplo, a ti mismo por correo) y copiarlo y pegarlo. No lo compartas con nadie.
+3. **Token:** el token de la app del paso 5. Lo más cómodo es enviártelo por un medio privado (por ejemplo, a ti mismo por correo), copiarlo y pegarlo, y después borrar ese mensaje. No lo compartas con nadie.
 4. Pulsa **Probar conexión**. Debe decir **"Conexión correcta con el PC"**.
 5. Pulsa **Guardar**. Vuelve atrás y pulsa **Sincronizar**: aparecerán tus visitas.
 
@@ -203,8 +234,18 @@ Listo. A partir de aquí el PC funciona solo: arranca al encenderlo, y la app si
 | Ver el token de la app | `sudo grep APP_TOKEN /etc/peritaje/peritaje.env` |
 | Ver la IP de Tailscale | `tailscale ip -4` |
 | Ver si Tailscale está conectado | `tailscale status` |
+| Ver el cortafuegos | `sudo ufw status` |
 
 ### Problemas típicos
+
+**Al instalar sale `Ejecuta con sudo`.**
+Falta `sudo` delante: `sudo bash deploy/install.sh`.
+
+**Al instalar sale `No such file or directory: deploy/install.sh`.**
+No estás en la carpeta correcta. Mira el nombre exacto con `ls ~` (puede ser `Peritaje-main` o `peritaje-main`) y entra con `cd ~/Peritaje-main/server`.
+
+**El servicio sale *failed* y en `journalctl -u peritaje -n 50` aparece `Address already in use`.**
+Otro programa usa el puerto 8000. Reinicia el PC; si sigue, mira cuál es con `sudo ss -ltnp | grep 8000` y pégame lo que sale.
 
 **En el paso 7 sale `Notion 401` o "API token is invalid".**
 El token de Notion está mal copiado. Repite el paso 6 y fíjate en que no haya espacios ni falte ningún carácter.
@@ -216,9 +257,14 @@ La integración no tiene acceso a la página. Repite el punto 5 del paso 3 (Cone
 El servicio no está en marcha. Mira `systemctl status peritaje`. Si dice *failed*, mira `journalctl -u peritaje -n 50` y pégame lo que sale. Lo más habitual es que falte el `NOTION_TOKEN` (paso 6).
 
 **La app dice "No se puede conectar … ¿Está Tailscale activo?".**
+
+Truco para saber dónde está el fallo: con Tailscale activado en el móvil, abre Chrome y entra en `http://<IP del PC>:8000/salud`. Si ves `{"detail":"Token no válido"}`, el móvil **sí** llega al PC y el problema es el token (mira "El PC rechaza el token" más abajo). Si la página no carga, el móvil no llega al PC:
+
 - Comprueba que Tailscale está **activado en el móvil** (el interruptor de la app de Tailscale).
 - Comprueba que el PC está encendido y que `tailscale status` en el PC no dice *Logged out*. Si lo dice, repite `sudo tailscale up`.
 - Revisa la dirección en Ajustes: tiene que empezar por `http://` (no `https://`) y acabar en `:8000`.
+- La IP tiene que ser la de Tailscale (empieza por `100.`), no la de la wifi de casa (`192.168.…`).
+- Comprueba el cortafuegos con `sudo ufw status` (paso 8, "Cerrar el PC a todo lo demás").
 
 **La app dice "El PC rechaza el token".**
 El token de la app no coincide. Vuelve a verlo con `sudo grep APP_TOKEN /etc/peritaje/peritaje.env` y pégalo de nuevo en Ajustes.
@@ -254,5 +300,31 @@ Tu configuración (tokens) se conserva: el instalador no toca `/etc/peritaje/per
 ## Seguridad, en corto
 
 - El **token de Notion** solo está en el PC, en un archivo que solo puede leer el administrador y el servicio.
-- El **token de la app** está en el PC y, cifrado, en tu móvil. Si pierdes el móvil, cambia el token: borra la línea `APP_TOKEN=...` del archivo, pon `APP_TOKEN=` seguido de un token nuevo (lo genera `openssl rand -hex 32`), reinicia el servicio y ponlo en la app del móvil nuevo.
+- El **token de la app** está en el PC y, cifrado, en tu móvil.
 - El PC no queda abierto a Internet: solo se entra a través de Tailscale.
+
+### Si pierdes el móvil (cambiar el token de la app)
+
+```
+sudo sed -i "s/^APP_TOKEN=.*/APP_TOKEN=$(openssl rand -hex 32)/" /etc/peritaje/peritaje.env && sudo systemctl restart peritaje && sudo grep '^APP_TOKEN=' /etc/peritaje/peritaje.env
+```
+
+El token viejo deja de servir al momento. Pon el nuevo en la app del móvil nuevo y quita el móvil perdido de <https://login.tailscale.com/admin/machines>.
+
+### Cambiar el token de Notion
+
+En <https://www.notion.so/my-integrations> abre la integración, regenera el secreto y ponlo en el PC como en el paso 6.
+
+## Mantenimiento
+
+- Una vez al mes, pon el sistema al día: `sudo apt update && sudo apt upgrade -y`. Si pide reiniciar, reinicia; el servidor y Tailscale vuelven solos.
+- Si el PC va muy lento, cierra el navegador y otros programas: el servidor no los necesita y tiene un límite de 300 MB de memoria. Con `free -h` ves la memoria libre.
+
+## Dónde está cada cosa en el PC
+
+| Qué | Dónde |
+|---|---|
+| Programa del servidor | `/opt/peritaje/server` |
+| Configuración y tokens | `/etc/peritaje/peritaje.env` (solo lo leen el administrador y el servicio) |
+| Registro de envíos (evita duplicar avances) | `/var/lib/peritaje` |
+| Servicio que lo arranca solo | `/etc/systemd/system/peritaje.service` |
