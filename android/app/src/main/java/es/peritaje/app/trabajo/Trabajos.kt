@@ -19,7 +19,7 @@ import java.util.concurrent.TimeUnit
 
 private val Context.repo get() = (applicationContext as PeritajeApp).contenedor.repositorio
 
-/** Trae el índice de citas (de Notion o del PC) y las que falten. */
+/** Trae el índice de citas del PC y las que falten. */
 class SincronizarWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
     override suspend fun doWork(): Result = try {
         applicationContext.repo.sincronizar()
@@ -33,7 +33,7 @@ class SincronizarWorker(ctx: Context, params: WorkerParameters) : CoroutineWorke
     }
 }
 
-/** Manda el avance de una visita. Solo se da por enviado cuando el destino confirma "ok". */
+/** Manda el avance de una visita al PC. Solo se da por enviado cuando el PC responde "ok". */
 class EnviarAvanceWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
     override suspend fun doWork(): Result {
         val id = inputData.getString(CLAVE_ID) ?: return Result.failure()

@@ -141,7 +141,7 @@ fun PantallaCitas(vm: CitasViewModel, abrirCita: (String) -> Unit, abrirAjustes:
                     }
                 }
                 if (sync.nube == Nube.SIN_CONFIGURAR) {
-                    item { Aviso("Pon el token de Notion en Ajustes para traer las citas.", "Configurar", abrirAjustes) }
+                    item { Aviso("Configura la dirección del PC y el token para traer las citas.", "Configurar", abrirAjustes) }
                 } else if (sync.antigua) {
                     item {
                         val cuando = sync.ultima?.let { Repositorio.fechaHoraLegible(it) } ?: "nunca"
@@ -152,7 +152,7 @@ fun PantallaCitas(vm: CitasViewModel, abrirCita: (String) -> Unit, abrirAjustes:
                     item {
                         Text(
                             if (filtro == Filtro.ENVIADAS) "No hay visitas enviadas en los últimos 7 días."
-                            else "No hay visitas. Pulsa Sincronizar para traerlas de Notion.",
+                            else "No hay visitas. Pulsa Sincronizar para traerlas del PC.",
                             style = MaterialTheme.typography.bodyLarge,
                             modifier = Modifier.padding(16.dp),
                         )

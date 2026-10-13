@@ -1,14 +1,6 @@
-# App de Peritaciones · v0.2
+# App de Peritaciones · v0.1
 
-La app trae las visitas desde Notion, permite rellenar el checklist y las observaciones, hacer fotos que se guardan en el móvil, y al pulsar **Finalizar visita** escribe el avance en Notion. Google Drive e incidencias quedan para el siguiente módulo.
-
-> **Modo actual: Notion directo.** De momento no hay servidor en el PC: la app habla directamente con Notion usando el token de una integración, que se escribe una vez en *Ajustes* y se guarda cifrado en el móvil (nunca va en el código ni en el APK). El servidor del PC (`server/`) sigue aquí para más adelante; cuando esté montado basta con elegir "A través del PC" en Ajustes. Hasta entonces, las secciones del PC de este documento no hacen falta.
-
-**Puesta en marcha (modo Notion directo):**
-1. En https://www.notion.so/my-integrations crea una integración interna y copia su token.
-2. En Notion abre *Gestión de Encargos - Peritaciones* → `···` → *Conexiones* → añade la integración.
-3. Instala el APK desde la versión [ultima](https://github.com/MatiasTissot/Peritaje/releases/tag/ultima) del repositorio.
-4. En la app: engranaje → *Notion directo* → pega el token → **Probar conexión** → **Guardar**.
+Primera versión: la app trae las visitas desde Notion (a través del PC), permite rellenar el checklist y las observaciones, hacer fotos que se guardan en el móvil, y al pulsar **Finalizar visita** envía el avance al PC, que lo escribe en Notion. Google Drive e incidencias quedan para el siguiente módulo.
 
 ```
 android/   App Android (Kotlin, Compose + Material 3, Room, WorkManager, Retrofit)
@@ -52,7 +44,7 @@ Registros: `journalctl -u peritaje -f`. Las bases de datos ya están configurada
 **Opción A, Android Studio** (en cualquier ordenador con 8 GB de RAM o más; el PC viejo no llega):
 abrir la carpeta `android/`, esperar a que sincronice Gradle y pulsar *Build → Build App Bundle(s) / APK(s) → Build APK(s)*. Por consola: `./gradlew assembleDebug`. El APK queda en `android/app/build/outputs/apk/debug/app-debug.apk`.
 
-**Opción B, GitHub** (la que se usa): cada cambio en `main` compila el APK y lo publica en la versión `ultima` del repositorio privado, con el mismo nombre de archivo (`peritaje.apk`). Se instala encima del anterior.
+**Opción B, GitHub**: subir esta carpeta a un repositorio privado. Cada cambio en `android/` compila el APK solo y lo deja para descargar en la pestaña *Actions* (artefacto `peritaje-debug-apk`). También pasa las pruebas del servidor.
 
 ## 3. Instalar y configurar el móvil
 

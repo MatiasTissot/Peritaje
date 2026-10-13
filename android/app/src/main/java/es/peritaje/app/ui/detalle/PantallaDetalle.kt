@@ -233,7 +233,7 @@ fun PantallaDetalle(vm: DetalleViewModel, volver: () -> Unit, irA: (String) -> U
             title = { Text("¿Finalizar la visita?") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("El checklist quedará bloqueado y el avance se enviará a Notion en cuanto haya red.")
+                    Text("El checklist quedará bloqueado y el avance se enviará al PC en cuanto haya red.")
                     Text("Fotos: ${fotos.size}")
                     if (faltan.isNotEmpty()) {
                         Text("Revise los siguientes datos (no es obligatorio):", fontWeight = FontWeight.SemiBold)
@@ -288,7 +288,7 @@ private fun BandaEstado(c: Cita, numFotos: Int) {
     val texto = when (c.estado) {
         EstadoCita.PENDIENTE -> null
         EstadoCita.VISITADA -> c.ultimoError?.let { "No se pudo enviar: $it. Se reintentará solo." }
-            ?: "Visita finalizada. Enviando el avance a Notion…"
+            ?: "Visita finalizada. Enviando el avance al PC…"
         EstadoCita.ENVIADA -> "Avance enviado a Notion el ${c.fechaEnvio?.let { Repositorio.fechaHoraLegible(it) } ?: ""}"
     } ?: return
     Surface(color = s.color.copy(alpha = 0.12f)) {
