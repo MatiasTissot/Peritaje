@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  El PC se alcanza por Tailscale (http://100.x.x.x:8000). Tailscale ya cifra todo el
+  tráfico entre móvil y PC (WireGuard), por eso se permite http sin TLS.
+  Si más adelante se usa "tailscale serve" con https, se puede quitar este permiso.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

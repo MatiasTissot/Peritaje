@@ -1,0 +1,22 @@
+[Unit]
+Description=Servidor de peritaciones (puente app <-> Notion)
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+User=peritaje
+WorkingDirectory=/opt/peritaje/server
+EnvironmentFile=/etc/peritaje/peritaje.env
+# Escucha en todas las interfaces; el cortafuegos (ufw) solo deja entrar por Tailscale.
+ExecStart=/opt/peritaje/server/.venv/bin/uvicorn app.main:app --factory --host 0.0.0.0 --port 8000 --workers 1
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/peritaje
+PrivateTmp=true
+MemoryMax=300M
+
+[Install]
+WantedBy=multi-user.target

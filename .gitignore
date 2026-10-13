@@ -1,0 +1,4 @@
+server/.venv/
+server/datos/
+__pycache__/
+.pytest_cache/
