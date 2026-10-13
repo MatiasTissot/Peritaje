@@ -6,6 +6,9 @@ set -euo pipefail
 [ "$(id -u)" -eq 0 ] || { echo "Ejecuta con sudo"; exit 1; }
 ORIGEN="$(cd "$(dirname "$0")/.." && pwd)"
 
+# Paquetes necesarios (si ya están, no hace nada).
+apt-get update -qq && apt-get install -y -qq python3-venv openssl >/dev/null
+
 id peritaje >/dev/null 2>&1 || useradd --system --home /opt/peritaje --shell /usr/sbin/nologin peritaje
 mkdir -p /opt/peritaje /var/lib/peritaje /etc/peritaje
 mkdir -p /opt/peritaje/server && rm -rf /opt/peritaje/server/app
