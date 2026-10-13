@@ -58,6 +58,7 @@ data class DetalleCita(
     @SerialName("exp_compania") val expCompania: String? = null,
     @SerialName("url_maps") val urlMaps: String? = null,
     @SerialName("notas_visita") val notasVisita: String? = null,
+    @SerialName("estado_notion") val estadoNotion: String? = null,
     val contactos: List<ContactoDto> = emptyList(),
 )
 

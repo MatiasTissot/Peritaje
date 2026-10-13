@@ -91,7 +91,6 @@ fun PantallaCitas(vm: CitasViewModel, abrirCita: (String) -> Unit, abrirAjustes:
             Filtro.ENVIADAS -> it.cita.estado == EstadoCita.ENVIADA
         }
     }
-    val conflicto = citas.firstOrNull { it.cita.fechaHoraNueva != null }?.cita
 
     Scaffold(
         topBar = {
@@ -152,7 +151,8 @@ fun PantallaCitas(vm: CitasViewModel, abrirCita: (String) -> Unit, abrirAjustes:
                     item {
                         Text(
                             if (filtro == Filtro.ENVIADAS) "No hay visitas enviadas en los últimos 7 días."
-                            else "No hay visitas. Pulsa Sincronizar para traerlas del PC.",
+                            else "No hay visitas. En el móvil se cargan las de hoy, las de mañana si sincronizas " +
+                                "a partir de las 17:00, y las pendientes de cerrar.",
                             style = MaterialTheme.typography.bodyLarge,
                             modifier = Modifier.padding(16.dp),
                         )
@@ -193,26 +193,6 @@ fun PantallaCitas(vm: CitasViewModel, abrirCita: (String) -> Unit, abrirAjustes:
             dismissButton = { TextButton(onClick = { verEstadoSync = false }) { Text("Cerrar") } },
         )
     }
-
-    conflicto?.let { c ->
-        AlertDialog(
-            onDismissRequest = {},
-            title = { Text("Cambio de fecha · ${c.idEncargo}") },
-            text = {
-                Text(
-                    "Esta visita ha cambiado de fecha/hora (de ${Repositorio.fechaHoraLegible(c.fechaHora)} a " +
-                        "${Repositorio.fechaHoraLegible(c.fechaHoraNueva!!)}) pero tienes información guardada. " +
-                        "¿Eliminar de todas formas o conservarla?"
-                )
-            },
-            confirmButton = { TextButton(onClick = { vm.resolverCambioFecha(c.idEncargo, conservar = true) }) { Text("Conservar") } },
-            dismissButton = {
-                TextButton(onClick = { vm.resolverCambioFecha(c.idEncargo, conservar = false) }) {
-                    Text("Eliminar", color = MaterialTheme.colorScheme.error)
-                }
-            },
-        )
-    }
 }
 
 @Composable
@@ -251,6 +231,13 @@ private fun TarjetaCita(r: CitaResumen, onClick: () -> Unit) {
                 Text(c.direccion, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
                 if (c.asegurado.isNotBlank()) Text(c.asegurado, style = MaterialTheme.typography.bodyMedium)
+                if (c.anulada) {
+                    Text("Anulada en Notion · tiene datos sin enviar", color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                } else if (c.avisoNotion != null) {
+                    Text("Cambiada en Notion", color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(s.texto, color = s.color, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                     if (r.numFotos > 0) {

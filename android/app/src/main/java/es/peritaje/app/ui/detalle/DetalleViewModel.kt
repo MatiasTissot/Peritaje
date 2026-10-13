@@ -11,10 +11,9 @@ import es.peritaje.app.PeritajeApp
 import es.peritaje.app.data.db.Cita
 import es.peritaje.app.data.db.EstadoCita
 import es.peritaje.app.data.db.FotoPendiente
-import es.peritaje.app.data.fotos.AlmacenFotos
+import es.peritaje.app.data.Repositorio
 import es.peritaje.app.trabajo.Planificador
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.filterNotNull
@@ -22,6 +21,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class DetalleViewModel(app: Application, val id: String) : AndroidViewModel(app) {
     private val contenedor = (app as PeritajeApp).contenedor
@@ -39,10 +40,14 @@ class DetalleViewModel(app: Application, val id: String) : AndroidViewModel(app)
         if (i < 0) null to null else ids.getOrNull(i - 1) to ids.getOrNull(i + 1)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null to null)
 
-    /** Copia editable del checklist; se guarda sola en Room unos instantes después de cada cambio. */
+    /**
+     * Copia editable del checklist. Es un borrador que se guarda en Room con cada cambio, sin esperas,
+     * en el ámbito de la app: aunque se cierre la pantalla o la app, lo escrito ya está en disco.
+     */
     var borrador by mutableStateOf<Cita?>(null)
         private set
-    private var guardado: Job? = null
+    @Volatile private var ultimo: Cita? = null
+    private val candado = Mutex()
 
     var mensaje by mutableStateOf<String?>(null)
         private set
@@ -56,19 +61,28 @@ class DetalleViewModel(app: Application, val id: String) : AndroidViewModel(app)
     fun editar(cambio: (Cita) -> Cita) {
         val actual = borrador ?: return
         if (!editable) return
-        borrador = cambio(actual)
-        guardado?.cancel()
-        guardado = viewModelScope.launch {
-            delay(400)
-            borrador?.let { repo.guardarChecklist(it) }
-        }
+        val nuevo = cambio(actual)
+        borrador = nuevo
+        ultimo = nuevo
+        contenedor.ambito.launch { guardarUltimo() }
+    }
+
+    /** Escribe la última versión del borrador (si llegan varias a la vez, la última siempre gana). */
+    private suspend fun guardarUltimo() = candado.withLock {
+        ultimo?.let { repo.guardarChecklist(it) }
+    }
+
+    override fun onCleared() {
+        contenedor.ambito.launch { guardarUltimo() }
     }
 
     fun finalizar() {
         viewModelScope.launch {
-            guardado?.cancel()
-            borrador?.let { repo.guardarChecklist(it) }
-            if (repo.finalizarVisita(id)) {
+            val hecho = contenedor.ambito.async {
+                guardarUltimo()
+                repo.finalizarVisita(id)
+            }.await()
+            if (hecho) {
                 Planificador.enviarAvance(getApplication(), id)
                 mensaje = "Visita finalizada. El avance se enviará al PC en cuanto haya red."
             }
@@ -77,46 +91,60 @@ class DetalleViewModel(app: Application, val id: String) : AndroidViewModel(app)
 
     fun limpiarMensaje() { mensaje = null }
 
+    fun quitarAviso() {
+        contenedor.ambito.launch { repo.quitarAviso(id) }
+    }
+
+    /** Texto del avance tal como se enviaría, para copiarlo antes de descartar una visita anulada. */
+    fun textoAvance(): String? = (borrador ?: cita.value)?.let { Repositorio.textoAvance(it, fotos.value.size) }
+
+    /** Descarta una visita anulada en Notion. Las fotos siguen en la galería. */
+    fun descartarAnulada(alTerminar: () -> Unit) {
+        viewModelScope.launch {
+            val hecho = contenedor.ambito.async { guardarUltimo(); repo.descartarAnulada(id) }.await()
+            if (hecho) alTerminar()
+        }
+    }
+
     // --- fotos ---------------------------------------------------------------
 
-    // Se guarda aquí (y no en la pantalla) para que sobreviva a girar el móvil con la cámara abierta.
-    private var destinoPendiente: AlmacenFotos.Destino? = null
-
-    /** Reserva el hueco de la siguiente foto y devuelve la URI donde debe escribir la cámara. */
+    /**
+     * Reserva el archivo de la siguiente foto y devuelve la URI donde debe escribir la cámara.
+     * La reserva queda apuntada en disco, así que la foto se rescata aunque Android cierre la app.
+     */
     suspend fun prepararFoto(): Uri? {
         val c = cita.value ?: return null
         return runCatching { almacen.preparar(c) }
             .onFailure { mensaje = "No se pudo preparar la foto: ${it.message}" }
             .getOrNull()
-            ?.also { destinoPendiente = it }
             ?.uriEscritura
     }
 
-    /** Devuelve true si la foto se guardó (para preguntar si se quiere tomar otra). */
+    /**
+     * La cámara ha vuelto. Se guarda cualquier foto con contenido, aunque la cámara diga "cancelado".
+     * Devuelve true si se guardó alguna (para preguntar si se quiere tomar otra).
+     */
     suspend fun resultadoCamara(ok: Boolean): Boolean {
-        val destino = destinoPendiente ?: return false
-        destinoPendiente = null
-        val c = cita.value
-        return if (ok && c != null) {
-            almacen.confirmar(c, destino)
-            true
-        } else {
-            almacen.descartar(destino)
-            false
-        }
+        val guardadas = contenedor.ambito.async { almacen.alVolverDeCamara(id) }.await()
+        if (ok && guardadas == 0) mensaje = "La cámara no devolvió ninguna foto"
+        return guardadas > 0
     }
 
     fun importar(uris: List<Uri>) {
         val c = cita.value ?: return
         viewModelScope.launch {
-            var fallos = 0
-            uris.forEach { runCatching { almacen.importar(c, it) }.onFailure { fallos++ } }
-            if (fallos > 0) mensaje = "No se pudieron copiar $fallos fotos"
+            val fallos = contenedor.ambito.async {
+                uris.count { runCatching { almacen.importar(c, it) }.isFailure }
+            }.await()
+            if (fallos > 0) mensaje = "No se pudieron copiar $fallos fotos (siguen en la galería)"
         }
     }
 
-    fun borrarFoto(foto: FotoPendiente) {
+    /** Quita la foto del expediente; el archivo sigue en la galería. */
+    fun quitarFoto(foto: FotoPendiente) {
         if (!editable) return
-        viewModelScope.launch { almacen.borrar(foto) }
+        contenedor.ambito.launch { almacen.quitar(foto) }
     }
+
+    fun uriParaVer(foto: FotoPendiente): Uri = almacen.uriParaVer(foto)
 }

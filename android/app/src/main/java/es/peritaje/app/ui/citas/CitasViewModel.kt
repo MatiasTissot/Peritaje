@@ -24,7 +24,6 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
 
 data class EstadoSync(
@@ -71,10 +70,6 @@ class CitasViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), EstadoSync())
 
     fun sincronizar() = Planificador.sincronizarAhora(getApplication())
-
-    fun resolverCambioFecha(id: String, conservar: Boolean) {
-        viewModelScope.launch { repo.resolverCambioFecha(id, conservar) }
-    }
 }
 
 /** true cuando hay red con internet. */

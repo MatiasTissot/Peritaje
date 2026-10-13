@@ -4,6 +4,8 @@ package es.peritaje.app.ui.detalle
 
 import android.Manifest
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -44,6 +46,7 @@ import androidx.compose.material.icons.filled.Directions
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -115,6 +118,7 @@ fun PantallaDetalle(vm: DetalleViewModel, volver: () -> Unit, irA: (String) -> U
     var confirmarFin by remember { mutableStateOf(false) }
     var preguntarOtra by remember { mutableStateOf(false) }
     var fotoABorrar by remember { mutableStateOf<FotoPendiente?>(null) }
+    var confirmarDescarte by remember { mutableStateOf(false) }
 
     // --- cámara y galería ----------------------------------------------------
     val camara = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
@@ -210,6 +214,7 @@ fun PantallaDetalle(vm: DetalleViewModel, volver: () -> Unit, irA: (String) -> U
         }
         Column(Modifier.padding(relleno).fillMaxSize()) {
             BandaEstado(c, fotos.size)
+            AvisoNotion(c, entendido = { vm.quitarAviso() }, descartar = { confirmarDescarte = true })
             PrimaryTabRow(selectedTabIndex = pestana) {
                 listOf("Datos", "Checklist", "Fotos (${fotos.size})").forEachIndexed { i, t ->
                     Tab(selected = pestana == i, onClick = { pestana = i }, modifier = Modifier.height(56.dp),
@@ -220,7 +225,8 @@ fun PantallaDetalle(vm: DetalleViewModel, volver: () -> Unit, irA: (String) -> U
                 0 -> PestanaDatos(c, context)
                 1 -> PestanaChecklist(vm)
                 else -> PestanaFotos(fotos, vm.editable, abrirCamara, abrirGaleria,
-                    abrir = { abrirFoto(context, it) }, borrar = { fotoABorrar = it })
+                    abrir = { lanzar(context, Intent(Intent.ACTION_VIEW).setDataAndType(vm.uriParaVer(it), "image/*")
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }, borrar = { fotoABorrar = it })
             }
         }
     }
@@ -258,18 +264,69 @@ fun PantallaDetalle(vm: DetalleViewModel, volver: () -> Unit, irA: (String) -> U
         )
     }
 
+    if (confirmarDescarte) {
+        DialogoDescartar(vm, context, cerrar = { confirmarDescarte = false }, volver = volver)
+    }
+
     fotoABorrar?.let { f ->
         AlertDialog(
             onDismissRequest = { fotoABorrar = null },
-            title = { Text("¿Borrar ${f.nombreArchivo}?") },
-            text = { Text("Se quitará del expediente y de la galería del móvil.") },
+            title = { Text("¿Quitar ${f.nombreArchivo} del expediente?") },
+            text = { Text("La foto no se borra: se queda en la galería del móvil (Pictures/PeritajeApp).") },
             confirmButton = {
-                TextButton(onClick = { vm.borrarFoto(f); fotoABorrar = null }) {
-                    Text("Borrar", color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = { vm.quitarFoto(f); fotoABorrar = null }) {
+                    Text("Quitar", color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = { TextButton(onClick = { fotoABorrar = null }) { Text("Cancelar") } },
         )
+    }
+}
+
+@Composable
+private fun DialogoDescartar(vm: DetalleViewModel, context: Context, cerrar: () -> Unit, volver: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = cerrar,
+        title = { Text("¿Descartar esta visita?") },
+        text = {
+            Text(
+                "Notion la ha anulado. Se quitará del móvil. El texto del avance se copiará al portapapeles " +
+                    "y las fotos se quedan en la galería (Pictures/PeritajeApp)."
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                vm.textoAvance()?.let { texto ->
+                    context.getSystemService(ClipboardManager::class.java)
+                        ?.setPrimaryClip(ClipData.newPlainText("Avance ${vm.id}", texto))
+                }
+                cerrar()
+                vm.descartarAnulada(volver)
+            }) { Text("Copiar y descartar", color = MaterialTheme.colorScheme.error) }
+        },
+        dismissButton = { TextButton(onClick = cerrar) { Text("Cancelar") } },
+    )
+}
+
+/** Avisos de cambios hechos en Notion: visita anulada/borrada o fecha cambiada. */
+@Composable
+private fun AvisoNotion(c: Cita, entendido: () -> Unit, descartar: () -> Unit) {
+    val texto = c.avisoNotion ?: if (c.anulada) "Esta visita está anulada en Notion." else return
+    Surface(color = MaterialTheme.colorScheme.errorContainer) {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer)
+                Spacer(Modifier.width(12.dp))
+                Text(texto, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onErrorContainer)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (c.anulada) {
+                    TextButton(onClick = descartar, modifier = Modifier.height(48.dp)) { Text("Descartar visita") }
+                } else {
+                    TextButton(onClick = entendido, modifier = Modifier.height(48.dp)) { Text("Entendido") }
+                }
+            }
+        }
     }
 }
 
@@ -389,12 +446,6 @@ private fun lanzar(context: Context, intent: Intent) {
         context.startActivity(intent)
     } catch (_: ActivityNotFoundException) {
     }
-}
-
-private fun abrirFoto(context: Context, foto: FotoPendiente) {
-    val uri = Uri.parse(foto.uriMediastore)
-    if (uri.scheme != "content") return
-    lanzar(context, Intent(Intent.ACTION_VIEW).setDataAndType(uri, "image/*").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
 }
 
 // --- Checklist ---------------------------------------------------------------

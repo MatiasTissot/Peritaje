@@ -41,6 +41,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import es.peritaje.app.BuildConfig
 import es.peritaje.app.PeritajeApp
+import es.peritaje.app.data.Repositorio
 import es.peritaje.app.trabajo.Planificador
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -66,6 +67,8 @@ class AjustesViewModel(app: Application) : AndroidViewModel(app) {
 
     fun guardar() {
         viewModelScope.launch {
+            url = Repositorio.normalizarUrl(url)
+            token = token.trim()
             withContext(Dispatchers.IO) { repo.guardarConexion(url, token) }
             resultado = "Guardado. Sincronizando…"
             Planificador.sincronizarAhora(getApplication())

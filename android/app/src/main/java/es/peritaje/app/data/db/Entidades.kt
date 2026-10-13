@@ -1,5 +1,6 @@
 package es.peritaje.app.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.ForeignKey
@@ -42,8 +43,12 @@ data class Cita(
     /** Identificador único del envío del avance, para que un reintento no lo duplique en Notion. */
     val idEnvio: String? = null,
     val ultimoError: String? = null,
-    /** Si no es null, el PC ha cambiado la fecha y hay que preguntar al perito qué hacer. */
+    /** Sin uso desde la v0.1.2 (antes: cambio de fecha pendiente de decidir). Se mantiene por compatibilidad. */
     val fechaHoraNueva: Long? = null,
+    /** La visita se anuló o borró en Notion, pero tiene datos sin enviar: se conserva hasta que el perito decida. */
+    @ColumnInfo(defaultValue = "0") val anulada: Boolean = false,
+    /** Aviso para el perito sobre cambios hechos en Notion (fecha movida, anulada...). */
+    val avisoNotion: String? = null,
 ) {
     fun checklistVacio(): Boolean =
         listOf(fechaOcurrencia, causa, quienAtiende, testigos, observacionesLibres).all { it.isNullOrBlank() } &&
@@ -69,6 +74,11 @@ data class FotoPendiente(
     val estadoSubida: EstadoSubida = EstadoSubida.PENDIENTE,
     val intentos: Int = 0,
     val fechaCaptura: Long,
+    /**
+     * Quitada del expediente por el perito. La fila se conserva (y el archivo sigue en la galería)
+     * para que la numeración no se repita y para no perder nunca una foto.
+     */
+    @ColumnInfo(defaultValue = "0") val quitada: Boolean = false,
 )
 
 @Entity(tableName = "configuracion")

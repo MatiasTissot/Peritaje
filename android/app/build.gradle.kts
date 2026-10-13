@@ -14,8 +14,8 @@ android {
         applicationId = "es.peritaje.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.1.1"
+        versionCode = 4
+        versionName = "0.1.2"
     }
 
     // Clave de depuración fija (en el repositorio) para que cada APK nuevo se instale encima

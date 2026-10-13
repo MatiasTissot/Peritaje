@@ -21,12 +21,20 @@ import es.peritaje.app.ui.citas.PantallaCitas
 import es.peritaje.app.ui.detalle.DetalleViewModel
 import es.peritaje.app.ui.detalle.PantallaDetalle
 import es.peritaje.app.ui.tema.TemaPeritaje
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        if (savedInstanceState == null) Planificador.sincronizarAhora(this)
+        if (savedInstanceState == null) {
+            // Primero se rescata cualquier foto que quedara a medias (p. ej. Android cerró la app con la cámara abierta).
+            val contenedor = (application as PeritajeApp).contenedor
+            contenedor.ambito.launch {
+                runCatching { contenedor.fotos.recuperarCapturas() }
+                Planificador.sincronizarAhora(this@MainActivity.applicationContext)
+            }
+        }
         setContent { TemaPeritaje { Navegacion() } }
     }
 }

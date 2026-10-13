@@ -9,84 +9,198 @@ import android.os.Environment
 import android.provider.MediaStore
 import androidx.core.content.FileProvider
 import es.peritaje.app.data.db.Cita
+import es.peritaje.app.data.db.CitaDao
 import es.peritaje.app.data.db.FotoDao
 import es.peritaje.app.data.db.FotoPendiente
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.TimeUnit
 
 /**
  * Guarda las fotos como fotos normales de la galería, en Pictures/PeritajeApp/AAAA-MM/
- * (mes de la visita), con nombre <id_encargo>_NN.jpg. La app nunca las borra sola.
+ * (mes de la visita), con nombre <id_encargo>_NN.jpg.
+ *
+ * Regla principal: **una foto nunca se pierde**.
+ * - La cámara escribe la foto original, a máxima calidad, directamente en su archivo definitivo.
+ * - Antes de abrir la cámara se apunta la captura en curso en disco ([capturas]); si Android
+ *   cierra la app mientras la cámara está abierta, al volver se recupera.
+ * - Un archivo con contenido nunca se borra, aunque la cámara diga "cancelado".
+ * - La app no borra nunca archivos de la galería por su cuenta.
  */
-class AlmacenFotos(private val context: Context, private val fotos: FotoDao) {
+class AlmacenFotos(
+    private val context: Context,
+    private val fotos: FotoDao,
+    private val citas: CitaDao,
+) {
 
     /** Hueco reservado para una foto. [uriEscritura] es donde escribe la cámara; [uriGuardada] la que se apunta en Room. */
-    data class Destino(val uriEscritura: Uri, val uriGuardada: Uri, val nombre: String, val numero: Int)
+    data class Destino(
+        val idEncargo: String,
+        val uriEscritura: Uri,
+        val uriGuardada: Uri,
+        val nombre: String,
+        val numero: Int,
+        val creada: Long = System.currentTimeMillis(),
+    ) {
+        fun aJson(): String = JSONObject()
+            .put("id", idEncargo).put("escritura", uriEscritura.toString()).put("guardada", uriGuardada.toString())
+            .put("nombre", nombre).put("numero", numero).put("creada", creada)
+            .toString()
+
+        companion object {
+            fun deJson(s: String): Destino? = runCatching {
+                val o = JSONObject(s)
+                Destino(
+                    o.getString("id"), Uri.parse(o.getString("escritura")), Uri.parse(o.getString("guardada")),
+                    o.getString("nombre"), o.getInt("numero"), o.getLong("creada"),
+                )
+            }.getOrNull()
+        }
+    }
 
     private val resolver get() = context.contentResolver
+    private val mutex = Mutex()
+
+    /** Capturas en curso, guardadas en disco (no en memoria) para sobrevivir a que Android cierre la app. */
+    private val capturas = context.getSharedPreferences("capturas_en_curso", Context.MODE_PRIVATE)
 
     private fun carpetaMes(cita: Cita): String =
         DateTimeFormatter.ofPattern("yyyy-MM").format(
             Instant.ofEpochMilli(cita.fechaHora).atZone(ZoneId.systemDefault())
         )
 
+    private fun siguienteNumero(idEncargo: String, enBd: Int?): Int {
+        val enCurso = capturas.all.values.mapNotNull { (it as? String)?.let(Destino::deJson) }
+            .filter { it.idEncargo == idEncargo }.maxOfOrNull { it.numero } ?: 0
+        return maxOf(enBd ?: 0, enCurso) + 1
+    }
+
+    /** Reserva el archivo de la siguiente foto y lo apunta como captura en curso. */
     suspend fun preparar(cita: Cita): Destino = withContext(Dispatchers.IO) {
-        val numero = (fotos.maxNumero(cita.idEncargo) ?: 0) + 1
-        val nombre = "%s_%02d.jpg".format(cita.idEncargo, numero)
-        val mes = carpetaMes(cita)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val valores = ContentValues().apply {
-                put(MediaStore.Images.Media.DISPLAY_NAME, nombre)
-                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-                put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/$CARPETA/$mes")
-                put(MediaStore.Images.Media.IS_PENDING, 1)
+        mutex.withLock {
+            val numero = siguienteNumero(cita.idEncargo, fotos.maxNumero(cita.idEncargo))
+            val nombre = "%s_%02d.jpg".format(cita.idEncargo, numero)
+            val mes = carpetaMes(cita)
+            val destino = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val valores = ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, nombre)
+                    put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/$CARPETA/$mes")
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+                val uri = resolver.insert(MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), valores)
+                    ?: error("No se pudo crear la foto en la galería")
+                Destino(cita.idEncargo, uri, uri, nombre, numero)
+            } else {
+                @Suppress("DEPRECATION")
+                val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "$CARPETA/$mes")
+                dir.mkdirs()
+                var archivo = File(dir, nombre)
+                var n = 1
+                while (archivo.exists()) archivo = File(dir, nombre.removeSuffix(".jpg") + " (${n++}).jpg")
+                val uriCamara = FileProvider.getUriForFile(context, "${context.packageName}.fotos", archivo)
+                Destino(cita.idEncargo, uriCamara, Uri.fromFile(archivo), archivo.name, numero)
             }
-            val uri = resolver.insert(MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), valores)
-                ?: error("No se pudo crear la foto en la galería")
-            Destino(uri, uri, nombre, numero)
+            // commit() y no apply(): tiene que estar en disco antes de abrir la cámara.
+            capturas.edit().putString(destino.uriGuardada.toString(), destino.aJson()).commit()
+            destino
+        }
+    }
+
+    private fun tamano(d: Destino): Long = runCatching {
+        if (d.uriGuardada.scheme == "file") File(d.uriGuardada.path!!).length()
+        else resolver.openFileDescriptor(d.uriEscritura, "r")?.use { it.statSize } ?: 0L
+    }.getOrDefault(0L)
+
+    /** Nombre real en la galería (Android añade " (1)" si ya existía uno igual). */
+    private fun nombreReal(d: Destino): String {
+        if (d.uriGuardada.scheme == "file") return File(d.uriGuardada.path!!).name
+        return runCatching {
+            resolver.query(d.uriEscritura, arrayOf(MediaStore.Images.Media.DISPLAY_NAME), null, null, null)?.use {
+                if (it.moveToFirst()) it.getString(0) else null
+            }
+        }.getOrNull() ?: d.nombre
+    }
+
+    /** Hace visible el archivo en la galería. */
+    private fun publicar(d: Destino) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && d.uriGuardada.scheme != "file") {
+            resolver.update(d.uriEscritura, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
         } else {
-            @Suppress("DEPRECATION")
-            val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "$CARPETA/$mes")
-            dir.mkdirs()
-            val archivo = File(dir, nombre)
-            val uriCamara = FileProvider.getUriForFile(context, "${context.packageName}.fotos", archivo)
-            Destino(uriCamara, Uri.fromFile(archivo), nombre, numero)
+            d.uriGuardada.path?.let { MediaScannerConnection.scanFile(context, arrayOf(it), arrayOf("image/jpeg"), null) }
         }
     }
 
-    /** La cámara (o la copia desde la galería) terminó bien: se publica y se apunta en Room. */
-    suspend fun confirmar(cita: Cita, destino: Destino) = withContext(Dispatchers.IO) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            resolver.update(destino.uriEscritura, ContentValues().apply {
-                put(MediaStore.Images.Media.IS_PENDING, 0)
-            }, null, null)
-        } else {
-            destino.uriGuardada.path?.let { MediaScannerConnection.scanFile(context, arrayOf(it), arrayOf("image/jpeg"), null) }
+    /**
+     * Cierra una captura. Si el archivo tiene contenido, se publica y se apunta en el expediente
+     * (aunque la cámara haya devuelto "cancelado"). Devuelve true si hay foto.
+     * Si está vacío solo se borra cuando [borrarSiVacio] (la cámara ya terminó).
+     */
+    private suspend fun cerrar(d: Destino, borrarSiVacio: Boolean): Boolean {
+        val clave = d.uriGuardada.toString()
+        if (tamano(d) > 0) {
+            publicar(d)
+            val cita = citas.obtener(d.idEncargo)
+            if (cita != null && fotos.existeUri(clave) == 0) {
+                fotos.insertar(
+                    FotoPendiente(
+                        idEncargo = d.idEncargo,
+                        uriMediastore = clave,
+                        nombreArchivo = nombreReal(d),
+                        numero = d.numero,
+                        fechaCaptura = d.creada,
+                    )
+                )
+            }
+            // Si la cita ya no existe, la foto queda igualmente en la galería.
+            capturas.edit().remove(clave).commit()
+            return true
         }
-        fotos.insertar(
-            FotoPendiente(
-                idEncargo = cita.idEncargo,
-                uriMediastore = destino.uriGuardada.toString(),
-                nombreArchivo = destino.nombre,
-                numero = destino.numero,
-                fechaCaptura = System.currentTimeMillis(),
-            )
-        )
+        if (borrarSiVacio) {
+            runCatching {
+                if (d.uriGuardada.scheme == "file") d.uriGuardada.path?.let { File(it).delete() }
+                else resolver.delete(d.uriEscritura, null, null)
+            }
+            capturas.edit().remove(clave).commit()
+        }
+        return false
     }
 
-    /** La captura se canceló: se elimina el hueco vacío. */
-    suspend fun descartar(destino: Destino) = withContext(Dispatchers.IO) {
-        runCatching {
-            if (destino.uriGuardada.scheme == "file") destino.uriGuardada.path?.let { File(it).delete() }
-            else resolver.delete(destino.uriEscritura, null, null)
+    /**
+     * La cámara ha vuelto (con o sin éxito). Revisa todas las capturas en curso de esa visita,
+     * también las que quedaron de una vez en que Android cerró la app. Devuelve cuántas fotos se guardaron.
+     */
+    suspend fun alVolverDeCamara(idEncargo: String): Int = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            pendientes().filter { it.idEncargo == idEncargo }.count { cerrar(it, borrarSiVacio = true) }
         }
     }
 
-    /** Copia una foto elegida de la galería al expediente, con el nombre y carpeta de la app. */
+    /**
+     * Al abrir la app: rescata cualquier foto que se quedara a medias. Las vacías recientes se
+     * dejan (la cámara podría seguir abierta); las vacías de más de un día se limpian.
+     */
+    suspend fun recuperarCapturas(): Int = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val ahora = System.currentTimeMillis()
+            pendientes().count { cerrar(it, borrarSiVacio = ahora - it.creada > TimeUnit.DAYS.toMillis(1)) }
+        }
+    }
+
+    /** true si hay una foto de esa visita a medio hacer (cámara abierta o app cerrada con la cámara abierta). */
+    fun hayCapturaEnCurso(idEncargo: String): Boolean = pendientes().any { it.idEncargo == idEncargo }
+
+    private fun pendientes(): List<Destino> =
+        capturas.all.values.mapNotNull { (it as? String)?.let(Destino::deJson) }
+
+    /** Copia una foto elegida de la galería al expediente, byte a byte (misma calidad), con el nombre de la app. */
     suspend fun importar(cita: Cita, origen: Uri) = withContext(Dispatchers.IO) {
         val destino = preparar(cita)
         try {
@@ -97,20 +211,26 @@ class AlmacenFotos(private val context: Context, private val fotos: FotoDao) {
                     entrada.copyTo(salida)
                 }
             }
-            confirmar(cita, destino)
         } catch (e: Exception) {
-            descartar(destino)
+            // Copia a medias: se descarta la copia (la foto original sigue intacta en la galería).
+            runCatching {
+                if (destino.uriGuardada.scheme == "file") destino.uriGuardada.path?.let { File(it).delete() }
+                else resolver.delete(destino.uriEscritura, null, null)
+            }
+            capturas.edit().remove(destino.uriGuardada.toString()).commit()
             throw e
         }
+        mutex.withLock { cerrar(destino, borrarSiVacio = true) }
     }
 
-    /** Quita la foto del expediente y de la galería (solo mientras la visita está abierta). */
-    suspend fun borrar(foto: FotoPendiente) = withContext(Dispatchers.IO) {
+    /** Quita la foto del expediente. El archivo se queda en la galería: la app nunca borra fotos. */
+    suspend fun quitar(foto: FotoPendiente) = withContext(Dispatchers.IO) { fotos.quitar(foto.id) }
+
+    /** URI para abrir la foto en el visor del móvil (en Android 8-9 hay que pasar por FileProvider). */
+    fun uriParaVer(foto: FotoPendiente): Uri {
         val uri = Uri.parse(foto.uriMediastore)
-        runCatching {
-            if (uri.scheme == "file") uri.path?.let { File(it).delete() } else resolver.delete(uri, null, null)
-        }
-        fotos.borrar(foto)
+        if (uri.scheme != "file") return uri
+        return FileProvider.getUriForFile(context, "${context.packageName}.fotos", File(uri.path!!))
     }
 
     companion object {

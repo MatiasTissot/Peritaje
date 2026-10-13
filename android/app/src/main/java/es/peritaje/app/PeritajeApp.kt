@@ -8,13 +8,19 @@ import es.peritaje.app.data.db.BaseDatos
 import es.peritaje.app.data.fotos.AlmacenFotos
 import es.peritaje.app.data.fotos.SubidorFotosDesactivado
 import es.peritaje.app.trabajo.Planificador
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 /** Dependencias de la app, creadas una sola vez. */
 class Contenedor(context: Context) {
     private val db = BaseDatos.crear(context)
+    val fotos = AlmacenFotos(context, db.fotos(), db.citas())
     // Al añadir Google Drive, sustituir SubidorFotosDesactivado por la implementación real.
-    val repositorio = Repositorio(db, AlmacenToken(context), SubidorFotosDesactivado)
-    val fotos = AlmacenFotos(context, db.fotos())
+    val repositorio = Repositorio(db, AlmacenToken(context), SubidorFotosDesactivado, fotos::hayCapturaEnCurso)
+
+    /** Ámbito de toda la app: lo que se lanza aquí (autoguardado, rescate de fotos) no se cancela al salir de una pantalla. */
+    val ambito = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 }
 
 class PeritajeApp : Application() {
