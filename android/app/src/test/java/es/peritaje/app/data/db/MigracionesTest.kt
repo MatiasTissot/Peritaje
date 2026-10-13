@@ -1,5 +1,6 @@
 package es.peritaje.app.data.db
 
+import android.app.Application
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import androidx.test.core.app.ApplicationProvider
@@ -18,7 +19,8 @@ import org.robolectric.annotation.Config
  * Room valida además que el resultado coincide exactamente con el esquema esperado.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+// Application vacía: la de la app arranca WorkManager, que aquí no hace falta.
+@Config(sdk = [34], application = Application::class)
 class MigracionesTest {
 
     @Test

@@ -18,13 +18,17 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
+import java.time.Instant
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 
 /**
- * Guarda las fotos como fotos normales de la galería, en Pictures/PeritajeApp/<expediente>/,
- * con la fecha y hora de la foto como nombre (AAAA-MM-DD_HH-MM-SS.jpg).
+ * Guarda las fotos como fotos normales de la galería, una carpeta por visita:
+ * Pictures/PeritajeApp/<expediente>/Visita_AAAA-MM-DD/, con la fecha y hora de la foto como
+ * nombre (AAAA-MM-DD_HH-MM-SS.jpg). En Drive se replicará como
+ * Expedientes_2026/<expediente>/Fotografias/Visita_AAAA-MM-DD/.
  *
  * Regla principal: **una foto nunca se pierde**.
  * - La cámara escribe la foto original, a máxima calidad, directamente en su archivo definitivo.
@@ -71,8 +75,12 @@ class AlmacenFotos(
     /** Capturas en curso, guardadas en disco (no en memoria) para sobrevivir a que Android cierre la app. */
     private val capturas = context.getSharedPreferences("capturas_en_curso", Context.MODE_PRIVATE)
 
-    /** Carpeta del expediente (sin caracteres que no admita el sistema de archivos). */
-    private fun carpeta(cita: Cita): String = cita.idEncargo.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "sin_expediente" }
+    /** Carpeta de la visita: <expediente>/Visita_<día de la visita>. */
+    private fun carpeta(cita: Cita): String {
+        val expediente = cita.idEncargo.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "sin_expediente" }
+        val dia = DIA.format(Instant.ofEpochMilli(cita.fechaHora).atZone(ZoneId.systemDefault()))
+        return "$expediente/Visita_$dia"
+    }
 
     private var ultimaBase = ""
     private var repetidas = 0
@@ -247,5 +255,6 @@ class AlmacenFotos(
     companion object {
         const val CARPETA = "PeritajeApp"
         private val NOMBRE = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss")
+        private val DIA = DateTimeFormatter.ofPattern("yyyy-MM-dd")
     }
 }

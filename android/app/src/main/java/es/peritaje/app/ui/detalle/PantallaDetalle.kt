@@ -565,7 +565,7 @@ private fun PestanaFotos(
         }
         if (fotos.isEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                Text("Aún no hay fotos. Se guardan en la galería, en Pictures/PeritajeApp/ (carpeta del mes).",
+                Text("Aún no hay fotos. Se guardan en la galería, en Pictures/PeritajeApp/<expediente>/Visita_<fecha>/.",
                     style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(8.dp))
             }
         }
