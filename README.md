@@ -20,6 +20,8 @@ Estados en el móvil: **PENDIENTE** → **VISITADA** (finalizada, en cola) → *
 
 ## 1. Servidor en el PC (Xubuntu)
 
+> Guía completa paso a paso, para no programadores y con solución de problemas: [docs/MANUAL_PC.md](docs/MANUAL_PC.md).
+
 Requisitos: Python 3.10 o superior, Tailscale instalado y con sesión iniciada en el PC y en el móvil.
 
 1. **Integración de Notion**: en https://www.notion.so/my-integrations crea una integración interna, copia su token y, en Notion, abre la página *Gestión de Encargos - Peritaciones* → `···` → *Conexiones* → añade la integración (así puede leer Encargos, Visitas y Contactos y escribir el avance).
