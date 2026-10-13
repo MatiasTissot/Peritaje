@@ -18,6 +18,17 @@ android {
         versionName = "0.1.0"
     }
 
+    // Clave de depuración fija (en el repositorio) para que cada APK nuevo se instale encima
+    // del anterior sin desinstalar. Para publicar a terceros habrá que usar una clave de release propia.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true

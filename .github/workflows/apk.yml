@@ -9,6 +9,8 @@ on:
 jobs:
   apk:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     defaults:
       run:
         working-directory: android
@@ -40,6 +42,16 @@ jobs:
         with:
           name: peritaje-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
+      # Publica el APK como versión "ultima" del repositorio (privada), para descargarlo directo desde el móvil.
+      - name: Publicar versión
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk peritaje.apk
+          gh release delete ultima -y --cleanup-tag || true
+          gh release create ultima peritaje.apk --title "Última versión" --prerelease \
+            --notes "APK de prueba compilado desde ${GITHUB_SHA::7}. Instalar encima de la versión anterior."
 
   servidor:
     runs-on: ubuntu-latest
