@@ -25,6 +25,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -41,6 +44,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import es.peritaje.app.BuildConfig
 import es.peritaje.app.PeritajeApp
+import es.peritaje.app.data.red.Modo
+import es.peritaje.app.data.red.NotionError
 import es.peritaje.app.trabajo.Planificador
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -50,8 +55,10 @@ import kotlinx.coroutines.withContext
 class AjustesViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = (app as PeritajeApp).contenedor.repositorio
 
+    var modo by mutableStateOf(Modo.NOTION)
+    var tokenNotion by mutableStateOf("")
     var url by mutableStateOf("")
-    var token by mutableStateOf("")
+    var tokenPc by mutableStateOf("")
     var resultado by mutableStateOf<String?>(null)
         private set
     var probando by mutableStateOf(false)
@@ -60,13 +67,22 @@ class AjustesViewModel(app: Application) : AndroidViewModel(app) {
     init {
         viewModelScope.launch {
             url = repo.configuracion.first()?.urlPc.orEmpty()
-            token = withContext(Dispatchers.IO) { repo.tokenActual() }
+            val (m, tn, tp) = withContext(Dispatchers.IO) { Triple(repo.modo(), repo.tokenNotion(), repo.tokenPc()) }
+            modo = m
+            tokenNotion = tn
+            tokenPc = tp
         }
     }
 
+    val completo: Boolean
+        get() = when (modo) {
+            Modo.NOTION -> tokenNotion.isNotBlank()
+            Modo.PC -> url.isNotBlank() && tokenPc.isNotBlank()
+        }
+
     fun guardar() {
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { repo.guardarConexion(url, token) }
+            withContext(Dispatchers.IO) { repo.guardarConexion(modo, url, tokenPc, tokenNotion) }
             resultado = "Guardado. Sincronizando…"
             Planificador.sincronizarAhora(getApplication())
         }
@@ -76,12 +92,13 @@ class AjustesViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             probando = true
             resultado = try {
-                val estado = repo.probarConexion(url, token)
-                if (estado == "ok") "Conexión correcta con el PC" else "El PC respondió: $estado"
+                repo.probarConexion(modo, url, tokenPc, tokenNotion)
+            } catch (e: NotionError) {
+                if (e.codigo == 401) "Notion rechaza el token. Revisa que lo has copiado entero." else e.message
             } catch (e: retrofit2.HttpException) {
                 if (e.code() == 401) "El PC rechaza el token" else "Error del PC (${e.code()})"
             } catch (e: Exception) {
-                "No se puede conectar: ${e.message ?: e.javaClass.simpleName}. ¿Está Tailscale activo?"
+                "No se puede conectar: ${e.message ?: e.javaClass.simpleName}"
             }
             probando = false
         }
@@ -91,6 +108,13 @@ class AjustesViewModel(app: Application) : AndroidViewModel(app) {
 @Composable
 fun PantallaAjustes(vm: AjustesViewModel, volver: () -> Unit) {
     var verToken by rememberSaveable { mutableStateOf(false) }
+    val transformacion = if (verToken) VisualTransformation.None else PasswordVisualTransformation()
+    val ojo: @Composable () -> Unit = {
+        IconButton(onClick = { verToken = !verToken }) {
+            Icon(if (verToken) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                contentDescription = if (verToken) "Ocultar" else "Mostrar")
+        }
+    }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -107,44 +131,75 @@ fun PantallaAjustes(vm: AjustesViewModel, volver: () -> Unit) {
             Modifier.padding(relleno).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text("Conexión con el PC", style = MaterialTheme.typography.titleMedium)
-            OutlinedTextField(
-                value = vm.url,
-                onValueChange = { vm.url = it },
-                label = { Text("Dirección del PC") },
-                placeholder = { Text("http://100.x.x.x:8000") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            OutlinedTextField(
-                value = vm.token,
-                onValueChange = { vm.token = it },
-                label = { Text("Token") },
-                singleLine = true,
-                visualTransformation = if (verToken) VisualTransformation.None else PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                trailingIcon = {
-                    IconButton(onClick = { verToken = !verToken }) {
-                        Icon(if (verToken) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                            contentDescription = if (verToken) "Ocultar" else "Mostrar")
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Text(
-                "El token se guarda cifrado en el móvil. La dirección es la IP de Tailscale del PC.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Text("Conexión", style = MaterialTheme.typography.titleMedium)
+            val opciones = listOf(Modo.NOTION to "Notion directo", Modo.PC to "A través del PC")
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                opciones.forEachIndexed { i, (m, texto) ->
+                    SegmentedButton(
+                        selected = vm.modo == m,
+                        onClick = { vm.modo = m },
+                        shape = SegmentedButtonDefaults.itemShape(index = i, count = opciones.size),
+                        modifier = Modifier.height(56.dp),
+                    ) { Text(texto) }
+                }
+            }
+
+            when (vm.modo) {
+                Modo.NOTION -> {
+                    OutlinedTextField(
+                        value = vm.tokenNotion,
+                        onValueChange = { vm.tokenNotion = it },
+                        label = { Text("Token de Notion") },
+                        placeholder = { Text("ntn_…") },
+                        singleLine = true,
+                        visualTransformation = transformacion,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        trailingIcon = ojo,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        "Es el token de una integración interna de Notion (notion.so/my-integrations) con acceso a " +
+                            "\"Gestión de Encargos - Peritaciones\". Se guarda cifrado en el móvil y no sale de él salvo hacia Notion.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Modo.PC -> {
+                    OutlinedTextField(
+                        value = vm.url,
+                        onValueChange = { vm.url = it },
+                        label = { Text("Dirección del PC") },
+                        placeholder = { Text("http://100.x.x.x:8000") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = vm.tokenPc,
+                        onValueChange = { vm.tokenPc = it },
+                        label = { Text("Token del PC") },
+                        singleLine = true,
+                        visualTransformation = transformacion,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        trailingIcon = ojo,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        "Para cuando el PC esté montado. La dirección es la IP de Tailscale del PC.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
             FilledTonalButton(
                 onClick = { vm.probar() },
-                enabled = !vm.probando && vm.url.isNotBlank() && vm.token.isNotBlank(),
+                enabled = !vm.probando && vm.completo,
                 modifier = Modifier.fillMaxWidth().height(56.dp),
             ) { Text(if (vm.probando) "Probando…" else "Probar conexión") }
             Button(
                 onClick = { vm.guardar() },
-                enabled = vm.url.isNotBlank() && vm.token.isNotBlank(),
+                enabled = vm.completo,
                 modifier = Modifier.fillMaxWidth().height(56.dp),
             ) { Text("Guardar") }
             vm.resultado?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }

@@ -66,7 +66,7 @@ enum class Nube(val texto: String, val icono: ImageVector, val color: Color) {
     PENDIENTE("Hay envíos en cola", Icons.Outlined.CloudUpload, Ambar),
     SIN_CONEXION("Sin conexión", Icons.Outlined.CloudOff, Gris),
     ERROR("Error de sincronización", Icons.Outlined.SyncProblem, Rojo),
-    SIN_CONFIGURAR("Falta configurar el PC", Icons.Outlined.SettingsSuggest, Rojo),
+    SIN_CONFIGURAR("Falta configurar la conexión", Icons.Outlined.SettingsSuggest, Rojo),
 }
 
 @Composable

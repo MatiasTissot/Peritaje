@@ -70,7 +70,7 @@ class DetalleViewModel(app: Application, val id: String) : AndroidViewModel(app)
             borrador?.let { repo.guardarChecklist(it) }
             if (repo.finalizarVisita(id)) {
                 Planificador.enviarAvance(getApplication(), id)
-                mensaje = "Visita finalizada. El avance se enviará al PC en cuanto haya red."
+                mensaje = "Visita finalizada. El avance se enviará a Notion en cuanto haya red."
             }
         }
     }

@@ -10,10 +10,14 @@ import es.peritaje.app.data.red.ContactoDto
 import es.peritaje.app.data.red.DetalleCita
 import es.peritaje.app.data.red.FabricaApi
 import es.peritaje.app.data.red.JsonApp
-import es.peritaje.app.data.red.PcApi
+import es.peritaje.app.data.red.EncargoNoEncontrado
+import es.peritaje.app.data.red.Modo
+import es.peritaje.app.data.red.NotionError
+import es.peritaje.app.data.red.OrigenDatos
+import es.peritaje.app.data.red.OrigenNotion
+import es.peritaje.app.data.red.OrigenPc
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.builtins.ListSerializer
-import retrofit2.HttpException
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -21,7 +25,7 @@ import java.time.format.DateTimeFormatter
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
-class SinConfiguracion : Exception("Falta configurar la dirección del PC o el token")
+class SinConfiguracion : Exception("Falta configurar la conexión en Ajustes")
 
 sealed interface ResultadoEnvio {
     data object Enviado : ResultadoEnvio
@@ -46,45 +50,64 @@ class Repositorio(
 
     // --- configuración ---------------------------------------------------
 
-    suspend fun guardarConexion(url: String, nuevoToken: String) {
+    suspend fun guardarConexion(modo: Modo, url: String, tokenPc: String, tokenNotion: String) {
         val actual = config.obtener() ?: Configuracion()
         config.guardar(actual.copy(urlPc = url.trim()))
-        token.token = nuevoToken
+        token.modo = modo
+        token.token = tokenPc
+        token.tokenNotion = tokenNotion
     }
 
-    fun tokenActual(): String = token.token
+    fun modo(): Modo = token.modo
+    fun tokenPc(): String = token.token
+    fun tokenNotion(): String = token.tokenNotion
 
-    private suspend fun api(): PcApi {
-        val url = config.obtener()?.urlPc.orEmpty()
-        val t = token.token
-        if (url.isBlank() || t.isBlank()) throw SinConfiguracion()
-        return FabricaApi.crear(url, t)
+    /** true si hay credenciales para el modo elegido. */
+    fun configurado(urlPc: String?): Boolean = when (token.modo) {
+        Modo.NOTION -> token.tokenNotion.isNotBlank()
+        Modo.PC -> !urlPc.isNullOrBlank() && token.token.isNotBlank()
     }
 
-    suspend fun probarConexion(url: String, t: String): String =
-        FabricaApi.crear(url, t).salud().estado
+    private fun crearOrigen(modo: Modo, url: String, tokenPc: String, tokenNotion: String): OrigenDatos =
+        when (modo) {
+            Modo.NOTION -> {
+                if (tokenNotion.isBlank()) throw SinConfiguracion()
+                OrigenNotion(tokenNotion)
+            }
+            Modo.PC -> {
+                if (url.isBlank() || tokenPc.isBlank()) throw SinConfiguracion()
+                OrigenPc(FabricaApi.crear(url, tokenPc))
+            }
+        }
+
+    private suspend fun origen(): OrigenDatos =
+        crearOrigen(token.modo, config.obtener()?.urlPc.orEmpty(), token.token, token.tokenNotion)
+
+    suspend fun probarConexion(modo: Modo, url: String, tokenPc: String, tokenNotion: String): String =
+        crearOrigen(modo, url, tokenPc, tokenNotion).probar()
 
     // --- sincronización (GET /citas-index + /citas/{id}) -----------------
 
     suspend fun sincronizar() {
         try {
-            val api = api()
+            val origen = origen()
             var fallidas = 0
-            for (entrada in api.indice().citas) {
+            for (entrada in origen.indice()) {
                 val fecha = aMillis(entrada.fechaHora)
                 val local = citas.obtener(entrada.idEncargo)
                 try {
                     when {
-                        local == null -> citas.insertar(api.detalle(entrada.idEncargo).aCita(fecha))
+                        local == null -> citas.insertar(origen.detalle(entrada.idEncargo).aCita(fecha))
                         local.fechaHora == fecha -> Unit
                         // Caso normal: nada capturado, se repide en silencio.
                         local.estado == EstadoCita.PENDIENTE && !tieneDatos(local) ->
-                            citas.insertar(api.detalle(entrada.idEncargo).aCita(fecha))
+                            citas.insertar(origen.detalle(entrada.idEncargo).aCita(fecha))
                         // Hay información guardada: se pregunta al perito (Eliminar / Conservar).
                         local.fechaHoraNueva != fecha -> citas.actualizar(local.copy(fechaHoraNueva = fecha))
                         else -> Unit
                     }
-                } catch (e: HttpException) {
+                } catch (e: Exception) {
+                    if (e !is EncargoNoEncontrado && !(e is NotionError && e.codigo in 400..499 && e.codigo != 401)) throw e
                     // Un encargo concreto falla (p. ej. borrado en Notion): se sigue con el resto.
                     fallidas++
                 }
@@ -114,7 +137,7 @@ class Repositorio(
         } else {
             // Se borra la cita y sus registros de foto (los archivos siguen en la galería).
             citas.borrar(id)
-            runCatching { citas.insertar(api().detalle(id).aCita(nueva)) }
+            runCatching { citas.insertar(origen().detalle(id).aCita(nueva)) }
         }
     }
 
@@ -159,7 +182,7 @@ class Repositorio(
         val cita = citas.obtener(id) ?: return ResultadoEnvio.Enviado
         if (cita.estado != EstadoCita.VISITADA) return ResultadoEnvio.Enviado
         val motivo = try {
-            val respuesta = api().avance(
+            val respuesta = origen().enviarAvance(
                 Avance(
                     idEncargo = cita.idEncargo,
                     fechaVisitaRealizada = aIso(cita.fechaVisitaRealizada ?: System.currentTimeMillis()),

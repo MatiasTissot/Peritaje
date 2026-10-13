@@ -52,7 +52,7 @@ class CitasViewModel(app: Application) : AndroidViewModel(app) {
     ) { online, corriendo, config, pendientes ->
         val ultima = config?.ultimaSincronizacion
         val nube = when {
-            config?.urlPc.isNullOrBlank() || repo.tokenActual().isBlank() -> Nube.SIN_CONFIGURAR
+            !repo.configurado(config?.urlPc) -> Nube.SIN_CONFIGURAR
             corriendo -> Nube.SINCRONIZANDO
             !online -> Nube.SIN_CONEXION
             config?.ultimoErrorSync != null -> Nube.ERROR
