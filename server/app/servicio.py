@@ -22,7 +22,7 @@ except ImportError:  # Python 3.8 (Xubuntu 20.04)
     from backports.zoneinfo import ZoneInfo
 
 from .config import Config
-from .notion import Notion
+from .notion import Notion, NotionError
 
 _HEX32 = re.compile(r"^[0-9a-fA-F]{32}$")
 _NO_SEGURO = re.compile(r"[^A-Za-z0-9_-]")
@@ -62,6 +62,10 @@ def prop(pagina: dict, nombre: str):
 
 def _vacio_a_none(s):
     return s if s else None
+
+
+def _sin_guiones(page_id: str) -> str:
+    return page_id.replace("-", "")
 
 
 # --- servicio ---------------------------------------------------------------
@@ -164,25 +168,28 @@ class Servicio:
                 {"property": "Fecha_Visita", "date": {"on_or_before": hasta.isoformat()}},
             ]},
         )
-        por_encargo: dict[str, list] = {}
+        # Una entrada por visita (un encargo puede tener varias). Cada encargo se lee una vez.
+        encargos: dict[str, dict | None] = {}
+        citas = []
         for v in visitas:
             fecha = prop(v, "Fecha_Visita")
-            encargos = prop(v, "Encargo") or []
-            if fecha and encargos:
-                por_encargo.setdefault(encargos[0], []).append((self._a_local(fecha), v))
-
-        citas = []
-        for page_id, lista in por_encargo.items():
-            encargo = self.notion.pagina(page_id)
-            if encargo.get("archived") or encargo.get("in_trash"):
+            relacion = prop(v, "Encargo") or []
+            if not fecha or not relacion:
                 continue
-            if prop(encargo, "Estado") in self.cfg.estados_excluidos:
+            page_id = relacion[0]
+            if page_id not in encargos:
+                encargo = self.notion.pagina(page_id)
+                valido = not (encargo.get("archived") or encargo.get("in_trash")) \
+                    and prop(encargo, "Estado") not in self.cfg.estados_excluidos
+                encargos[page_id] = encargo if valido else None
+            encargo = encargos[page_id]
+            if encargo is None:
                 continue
-            fecha, _ = self._elegir_visita(lista)
             ident = self.id_legible(encargo)
             self._ids[ident] = encargo["id"]
-            citas.append({"id_encargo": ident, "fecha_hora": self._iso(fecha)})
-        citas.sort(key=lambda c: c["fecha_hora"])
+            citas.append({"id_encargo": ident, "id_visita": _sin_guiones(v["id"]),
+                          "fecha_hora": self._iso(self._a_local(fecha))})
+        citas.sort(key=lambda c: (c["fecha_hora"], c["id_visita"]))
         return citas
 
     # GET /citas/{id_encargo}
@@ -197,8 +204,42 @@ class Servicio:
             for v in self.notion.consultar(self.cfg.db_visitas, relacion)
             if prop(v, "Fecha_Visita")
         ]
-        elegida = self._elegir_visita(visitas)
+        return self._ficha(encargo, self._elegir_visita(visitas))
 
+    # GET /visitas/{id_visita}
+
+    def _visita(self, id_visita: str) -> dict:
+        """Página de la visita, o EncargoNoEncontrado si no existe o está borrada."""
+        if not _HEX32.match(id_visita):
+            raise EncargoNoEncontrado(f"Visita {id_visita} no válida")
+        try:
+            visita = self.notion.pagina(id_visita)
+        except NotionError as e:
+            if e.status in (400, 404):
+                raise EncargoNoEncontrado(f"No se encontró la visita {id_visita} en Notion") from e
+            raise
+        if visita.get("archived") or visita.get("in_trash"):
+            raise EncargoNoEncontrado(f"La visita {id_visita} está borrada en Notion")
+        return visita
+
+    def detalle_visita(self, id_visita: str) -> dict:
+        visita = self._visita(id_visita)
+        relacion = prop(visita, "Encargo") or []
+        if not relacion:
+            raise EncargoNoEncontrado(f"La visita {id_visita} no tiene encargo")
+        # Siempre se lee la página (no la caché) para detectar encargos borrados.
+        page_id = _sin_guiones(relacion[0])
+        encargo = self._vigente(page_id, self.notion.pagina(page_id))
+        fecha = prop(visita, "Fecha_Visita")
+        ficha = self._ficha(encargo, (self._a_local(fecha), visita) if fecha else None)
+        if not fecha:
+            ficha["notas_visita"] = _vacio_a_none(prop(visita, "Notas_Campo"))
+        ficha["id_visita"] = _sin_guiones(visita["id"])
+        return ficha
+
+    def _ficha(self, encargo: dict, elegida) -> dict:
+        page_id = encargo["id"]
+        relacion = {"property": "Encargo", "relation": {"contains": page_id}}
         contactos = []
         for c in self.notion.consultar(self.cfg.db_contactos, relacion):
             contactos.append({
@@ -274,6 +315,21 @@ class Servicio:
                 return True
         return False
 
+    def _fecha_visita_de(self, id_visita: str, encargo: dict) -> str | None:
+        """Fecha programada de la visita para la cabecera del avance.
+
+        Con varias visitas por encargo distingue un avance de otro. Si la visita ya no
+        existe o no es de este encargo, se escribe igual sin ella: el avance no se pierde.
+        """
+        try:
+            pagina = self._visita(id_visita)
+        except EncargoNoEncontrado:
+            return None
+        if _sin_guiones(encargo["id"]) not in [_sin_guiones(r) for r in prop(pagina, "Encargo") or []]:
+            return None
+        fecha = prop(pagina, "Fecha_Visita")
+        return self._a_local(fecha).strftime("%d/%m/%Y %H:%M") if fecha else None
+
     @staticmethod
     def _parrafo(texto: str, negrita: bool = False) -> dict:
         trozos = [texto[i:i + 1900] for i in range(0, len(texto), 1900)] or [""]
@@ -282,7 +338,7 @@ class Servicio:
         ]}}
 
     def escribir_avance(self, id_encargo: str, fecha_visita_realizada: str, texto: str,
-                        id_envio: str | None = None) -> str:
+                        id_envio: str | None = None, id_visita: str | None = None) -> str:
         with self._lock:
             if id_envio and self._ya_enviado(id_envio):
                 return "ya_registrado"
@@ -291,6 +347,9 @@ class Servicio:
                 visita = self._a_local(fecha_visita_realizada).strftime("%d/%m/%Y %H:%M")
             except ValueError:
                 visita = fecha_visita_realizada
+            programada = self._fecha_visita_de(id_visita, encargo) if id_visita else None
+            if programada:
+                visita = f"{programada} (realizada {visita})"
             recibido = self._hoy().strftime("%d/%m/%Y %H:%M")
             # La referencia del envío va en la cabecera para reconocer un avance ya escrito
             # aunque se haya perdido el registro local (p. ej. Notion aplicó la escritura

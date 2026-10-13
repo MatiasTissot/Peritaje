@@ -14,7 +14,9 @@ VERSION = "2022-06-28"
 
 
 class NotionError(Exception):
-    pass
+    def __init__(self, mensaje: str, status: int | None = None):
+        super().__init__(mensaje)
+        self.status = status
 
 
 class Notion:
@@ -48,7 +50,7 @@ class Notion:
                 time.sleep(min(espera, 10))
                 continue
             if r.status_code >= 400:
-                raise NotionError(f"Notion {r.status_code}: {r.text[:300]}")
+                raise NotionError(f"Notion {r.status_code}: {r.text[:300]}", r.status_code)
             return r.json()
         raise NotionError(f"Notion no responde ({r.status_code}) en {ruta}")
 
