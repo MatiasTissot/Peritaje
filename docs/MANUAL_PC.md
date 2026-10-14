@@ -25,7 +25,9 @@ Móvil (app)  ──Tailscale──>  PC (servidor)  ──Internet──>  Noti
 Necesitas:
 
 - El **PC con Xubuntu** encendido y con Internet.
-- Tu **móvil Android** con la app instalada ([descargar peritaje.apk](https://github.com/MatiasTissot/Peritaje/releases/download/ultima/peritaje.apk), con tu sesión de GitHub iniciada).
+- Tu **móvil Android** con la app **0.1.3 o posterior** instalada ([descargar peritaje.apk](https://github.com/MatiasTissot/Peritaje/releases/download/ultima/peritaje.apk), con tu sesión de GitHub iniciada). La versión se ve abajo del todo en Ajustes (engranaje).
+
+> **Primero el móvil, después el PC.** Instala o actualiza la app del móvil **antes** de instalar o actualizar el programa del PC. Con una app anterior a la 0.1.3 y el PC nuevo, en los encargos con varias visitas puede no cargarse la visita de hoy.
 - Tu **cuenta de Notion** (la del workspace *Gestión de Encargos - Peritaciones*).
 - Tu **cuenta de GitHub**.
 - Una cuenta para **Tailscale**. Puedes entrar con tu cuenta de Google; es gratis para uso personal.
@@ -114,17 +116,18 @@ El instalador hace todo solo: instala lo necesario, crea el servicio `peritaje` 
 Al final verás algo así:
 
 ```
->> El servicio aún no arranca: es normal si falta el NOTION_TOKEN.
->> Edita /etc/peritaje/peritaje.env y pon tu NOTION_TOKEN, luego: sudo systemctl restart peritaje
+>> Falta el NOTION_TOKEN. Edita /etc/peritaje/peritaje.env y luego: sudo systemctl restart peritaje
 >> Regla del puerto 8000 preparada, pero el cortafuegos está INACTIVO.
 ...
 >> Token de la app (cópialo en Ajustes de la app):
 3f9a1c...(64 letras y números)
+>> El mismo token en QR: escanéalo con la cámara del móvil (o Google Lens) y copia el texto.
+(un cuadrado QR dibujado en el Terminal)
 ```
 
-Los avisos de "aún no arranca" y "cortafuegos INACTIVO" son normales en este punto: se arreglan en los pasos 6 y 8.
+Los avisos de "falta el NOTION_TOKEN" y "cortafuegos INACTIVO" son normales en este punto: se arreglan en los pasos 6 y 8. Hasta que pongas el token de Notion, el servicio se queda parado a propósito.
 
-**Apunta ese token de la app**; lo necesitas en el paso 9. Si lo pierdes, se puede volver a ver con:
+**Guarda ese token de la app**; lo necesitas en el paso 9. Lo más cómodo es escanear el QR con el móvil y copiar el texto, así no hay que teclear 64 caracteres. Si lo pierdes, se puede volver a ver con:
 
 ```
 sudo grep APP_TOKEN /etc/peritaje/peritaje.env
@@ -156,7 +159,7 @@ sudo systemctl restart peritaje
 TOKEN=$(sudo grep '^APP_TOKEN=' /etc/peritaje/peritaje.env | cut -d= -f2) && curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8000/citas-index
 ```
 
-- **Bien:** sale algo como `{"citas":[{"id_encargo":"MA26043441","fecha_hora":"2026-10-14T10:00:00"}]}`. Son tus próximas visitas (de ayer a dentro de 14 días). Si no tienes visitas en esas fechas sale `{"citas":[]}`, y también está bien.
+- **Bien:** sale algo como `{"citas":[{"id_encargo":"MA26043441","id_visita":"1a2b…","fecha_hora":"2026-10-14T10:00:00"}]}`, una línea por visita. Son las visitas de ayer, hoy y mañana (el móvil carga las de hoy, y las de mañana a partir de las 17:00). Si no tienes visitas en esas fechas sale `{"citas":[]}`, y también está bien.
 - **Mal:** si sale un error, ve a [Si algo falla](#si-algo-falla).
 
 ---
@@ -226,11 +229,13 @@ En el móvil, con Tailscale activado:
 
 1. Abre la app **Peritaje** → icono del **engranaje** (arriba a la derecha).
 2. **Dirección del PC:** `http://` + la IP del paso 8 + `:8000`. Ejemplo: `http://100.101.102.103:8000`.
-3. **Token:** el token de la app del paso 5. Lo más cómodo es enviártelo por un medio privado (por ejemplo, a ti mismo por correo), copiarlo y pegarlo, y después borrar ese mensaje. No lo compartas con nadie.
+3. **Token:** el token de la app del paso 5. Lo más cómodo es escanear con la cámara del móvil (o Google Lens) el QR que mostró el instalador, copiar el texto y pegarlo aquí. Si no lo tienes a mano, vuelve a verlo en el PC con `sudo grep APP_TOKEN /etc/peritaje/peritaje.env`. No lo compartas con nadie.
 4. Pulsa **Probar conexión**. Debe decir **"Conexión correcta con el PC"**.
 5. Pulsa **Guardar**. Vuelve atrás y pulsa **Sincronizar**: aparecerán tus visitas.
 
 El token se guarda **cifrado** en el móvil.
+
+**Comprueba Google Fotos.** La app guarda las fotos en la carpeta `PeritajeApp` del móvil. Son fotos de viviendas de terceros: que no se suban a tu cuenta personal de Google. Abre **Google Fotos** → tu foto de perfil → **Ajustes de Fotos** → **Copia de seguridad** → **Copia de seguridad de carpetas del dispositivo** (o similar) y comprueba que **PeritajeApp está desactivada**. Por defecto lo está; solo hay que asegurarse.
 
 ---
 
@@ -300,7 +305,7 @@ El token de la app no coincide. Vuelve a verlo con `sudo grep APP_TOKEN /etc/per
 
 **La conexión es correcta, pero no aparece ninguna visita.**
 El PC solo manda visitas que cumplen todo esto:
-- Están en la base **Visitas** con **Fecha_Visita** entre ayer y dentro de 14 días.
+- Están en la base **Visitas** con **Fecha_Visita** de hoy (o de mañana, si sincronizas a partir de las 17:00).
 - Tienen el **Encargo** relacionado.
 - El encargo no está en estado ANULADO ni PNDT ANULADO.
 
@@ -321,6 +326,7 @@ El servicio y Tailscale arrancan solos. Si no conecta, mira `systemctl status pe
 
 Cuando haya una versión nueva del servidor:
 
+0. **Primero actualiza la app del móvil** (si hay versión nueva), y después el PC.
 1. Repite el **paso 4** (bajar el ZIP y descomprimirlo; sobrescribe la carpeta).
 2. Ejecuta otra vez el **paso 5**. El instalador reinicia el servicio, así que el código nuevo funciona al momento.
 

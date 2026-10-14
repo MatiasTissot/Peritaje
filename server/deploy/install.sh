@@ -14,7 +14,7 @@ if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 8))' 2>/dev/null; t
 fi
 
 # Paquetes necesarios (si ya están, no hace nada).
-apt-get update -qq && apt-get install -y -qq python3-venv openssl >/dev/null
+apt-get update -qq && apt-get install -y -qq python3-venv openssl qrencode >/dev/null
 
 id peritaje >/dev/null 2>&1 || useradd --system --home /opt/peritaje --shell /usr/sbin/nologin peritaje
 mkdir -p /opt/peritaje /var/lib/peritaje /etc/peritaje
@@ -35,16 +35,19 @@ chmod 640 /etc/peritaje/peritaje.env
 cp "$ORIGEN/deploy/peritaje.service" /etc/systemd/system/peritaje.service
 systemctl daemon-reload
 systemctl enable peritaje >/dev/null 2>&1
-# restart (no "enable --now") para que una actualización cargue el código nuevo.
-systemctl restart peritaje || true
-sleep 3
-if systemctl is-active --quiet peritaje; then
-  echo ">> Servicio peritaje en marcha"
+if grep -q '^NOTION_TOKEN=.\+' /etc/peritaje/peritaje.env; then
+  # restart (no "enable --now") para que una actualización cargue el código nuevo.
+  systemctl restart peritaje || true
+  sleep 3
+  if systemctl is-active --quiet peritaje; then
+    echo ">> Servicio peritaje en marcha"
+  else
+    echo ">> El servicio no arranca. Mira el motivo con: journalctl -u peritaje -n 50"
+  fi
 else
-  echo ">> El servicio aún no arranca: es normal si falta el NOTION_TOKEN."
-fi
-if ! grep -q '^NOTION_TOKEN=.\+' /etc/peritaje/peritaje.env; then
-  echo ">> Edita /etc/peritaje/peritaje.env y pon tu NOTION_TOKEN, luego: sudo systemctl restart peritaje"
+  # Sin token de Notion no se arranca: solo fallaría y se reiniciaría en bucle.
+  systemctl stop peritaje 2>/dev/null || true
+  echo ">> Falta el NOTION_TOKEN. Edita /etc/peritaje/peritaje.env y luego: sudo systemctl restart peritaje"
 fi
 
 # Cortafuegos: el puerto 8000 solo por Tailscale. Si el SSH está en uso, se deja
@@ -68,5 +71,10 @@ fi
 
 echo
 echo ">> Token de la app (cópialo en Ajustes de la app):"
-grep '^APP_TOKEN=' /etc/peritaje/peritaje.env | cut -d= -f2
+TOKEN_APP=$(grep '^APP_TOKEN=' /etc/peritaje/peritaje.env | cut -d= -f2)
+echo "$TOKEN_APP"
+if command -v qrencode >/dev/null; then
+  echo ">> El mismo token en QR: escanéalo con la cámara del móvil (o Google Lens) y copia el texto."
+  qrencode -t ansiutf8 "$TOKEN_APP"
+fi
 echo ">> Si lo pierdes, se vuelve a ver con: sudo grep APP_TOKEN /etc/peritaje/peritaje.env"

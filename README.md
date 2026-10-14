@@ -10,7 +10,7 @@ server/    Servidor del PC (FastAPI + Uvicorn), único que habla con Notion
 
 ## Cómo funciona
 
-1. El PC consulta la base **Visitas** de Notion (ventana: ayer + 14 días) y manda al móvil el índice de citas. El identificador de cada cita es el **Exp_Gabinete** del encargo (p. ej. `MA26043441`).
+1. El PC consulta la base **Visitas** de Notion (ventana: ayer, hoy y mañana) y manda al móvil el índice de citas. El identificador de cada cita es el **Exp_Gabinete** del encargo (p. ej. `MA26043441`).
 2. El móvil compara con lo que tiene y pide el detalle de lo que le falta: dirección, asegurado y teléfono (base **Contactos**, rol Asegurado), tipo, descripción, notas de la visita y resto de contactos.
 3. En la visita todo se guarda en el móvil al momento, sin cobertura. Las fotos van a la galería en `Pictures/PeritajeApp/AAAA-MM/` con nombre `<id>_NN.jpg`.
 4. **Finalizar visita** bloquea el checklist y deja el avance en cola. WorkManager lo manda en cuanto hay red (aunque la app esté cerrada o el móvil se reinicie) y solo lo marca como ENVIADA cuando el PC responde `ok`. Cada envío lleva un identificador, así que un reintento no duplica el texto en Notion.
