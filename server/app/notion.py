@@ -3,6 +3,8 @@
 Solo lo que usa el servidor: consultar bases de datos, leer páginas, listar y
 añadir bloques. Se usa httpx directamente para no depender de un SDK más.
 """
+from __future__ import annotations
+
 import time
 
 import httpx
@@ -12,7 +14,9 @@ VERSION = "2022-06-28"
 
 
 class NotionError(Exception):
-    pass
+    def __init__(self, mensaje: str, status: int | None = None):
+        super().__init__(mensaje)
+        self.status = status
 
 
 class Notion:
@@ -28,15 +32,25 @@ class Notion:
         )
 
     def _pedir(self, metodo: str, ruta: str, **kw) -> dict:
-        # Notion limita a ~3 peticiones/s; ante 429 o 5xx se reintenta con espera.
+        # Notion limita a ~3 peticiones/s: ante 429 se reintenta con espera (la petición
+        # no se procesó). Ante 5xx o fallo de red solo se reintentan las lecturas: una
+        # escritura (PATCH) puede haberse aplicado aunque la respuesta falle, y repetirla
+        # duplicaría el avance.
+        escritura = metodo.upper() == "PATCH"
         for intento in range(4):
-            r = self._http.request(metodo, ruta, **kw)
-            if r.status_code == 429 or r.status_code >= 500:
+            try:
+                r = self._http.request(metodo, ruta, **kw)
+            except httpx.HTTPError as e:
+                if escritura or intento == 3:
+                    raise NotionError(f"Sin conexión con Notion ({type(e).__name__}) en {ruta}") from e
+                time.sleep(1 + intento)
+                continue
+            if r.status_code == 429 or (r.status_code >= 500 and not escritura):
                 espera = float(r.headers.get("Retry-After", 1 + intento))
                 time.sleep(min(espera, 10))
                 continue
             if r.status_code >= 400:
-                raise NotionError(f"Notion {r.status_code}: {r.text[:300]}")
+                raise NotionError(f"Notion {r.status_code}: {r.text[:300]}", r.status_code)
             return r.json()
         raise NotionError(f"Notion no responde ({r.status_code}) en {ruta}")
 

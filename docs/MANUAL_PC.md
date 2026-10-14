@@ -6,6 +6,18 @@ No hace falta saber programar. Solo hay que copiar y pegar órdenes en el **Term
 
 **Tiempo aproximado:** 30-45 minutos.
 
+### Cómo encaja todo
+
+```
+Móvil (app)  ──Tailscale──>  PC (servidor)  ──Internet──>  Notion
+```
+
+- La app **nunca** habla con Notion: todo pasa por el PC. Sin el PC encendido y conectado, la app no puede traer visitas ni enviar avances (lo que hagas en la visita se guarda en el móvil y se envía cuando el PC vuelva a responder).
+- Hay **dos llaves distintas**, no las mezcles:
+  - **Token de Notion**: deja al PC entrar en tu Notion. Solo vive en el PC.
+  - **Token de la app**: la contraseña que el móvil da al PC. Lo genera el instalador.
+- No pegues estos tokens en chats, correos que guardes ni capturas que compartas.
+
 ---
 
 ## Antes de empezar
@@ -13,7 +25,9 @@ No hace falta saber programar. Solo hay que copiar y pegar órdenes en el **Term
 Necesitas:
 
 - El **PC con Xubuntu** encendido y con Internet.
-- Tu **móvil Android** con la app instalada ([descargar peritaje.apk](https://github.com/MatiasTissot/Peritaje/releases/download/ultima/peritaje.apk), con tu sesión de GitHub iniciada).
+- Tu **móvil Android** con la app **0.1.3 o posterior** instalada ([descargar peritaje.apk](https://github.com/MatiasTissot/Peritaje/releases/download/ultima/peritaje.apk), con tu sesión de GitHub iniciada). La versión se ve abajo del todo en Ajustes (engranaje).
+
+> **Primero el móvil, después el PC.** Instala o actualiza la app del móvil **antes** de instalar o actualizar el programa del PC. Con una app anterior a la 0.1.3 y el PC nuevo, en los encargos con varias visitas puede no cargarse la visita de hoy.
 - Tu **cuenta de Notion** (la del workspace *Gestión de Encargos - Peritaciones*).
 - Tu **cuenta de GitHub**.
 - Una cuenta para **Tailscale**. Puedes entrar con tu cuenta de Google; es gratis para uso personal.
@@ -25,6 +39,18 @@ Necesitas:
 - Pulsa **Enter** después de cada orden y espera a que vuelva a aparecer el cursor.
 - Cuando una orden empieza por `sudo`, te pedirá **tu contraseña** del PC. Al escribirla no se ve nada en pantalla: es normal. Escríbela y pulsa Enter.
 
+### Comprobación previa (1 minuto)
+
+Antes de nada, pega esto en el Terminal:
+
+```
+lsb_release -d; python3 --version; uname -m
+```
+
+- La versión de Xubuntu tiene que ser **20.04 o posterior** (mejor 22.04 o 24.04).
+- `Python` tiene que ser **3.8 o mayor**. Si sale 3.6 o menos, o "orden no encontrada", el sistema es demasiado antiguo: hay que instalar un Xubuntu más nuevo antes de seguir.
+- La última línea debe decir `x86_64`. Si dice `i686` o `i386` (PC de 32 bits), para aquí y avísame: puede que alguna pieza no se instale.
+
 ---
 
 ## Paso 1. Poner el sistema al día
@@ -32,7 +58,7 @@ Necesitas:
 Pega esto en el Terminal:
 
 ```
-sudo apt update && sudo apt upgrade -y && sudo apt install -y curl unzip
+sudo apt update && sudo apt upgrade -y && sudo apt install -y curl unzip ufw
 ```
 
 Puede tardar varios minutos. Si al final pide reiniciar, reinicia y vuelve a abrir el Terminal.
@@ -47,6 +73,7 @@ El PC tiene que estar siempre encendido, porque la app le habla a cualquier hora
 2. Pestaña *Sistema*: en "Cuando esté inactivo" pon **Nunca** (en *Suspender* y en *Hibernar*).
 3. Si es un portátil, en "Al cerrar la tapa" elige **Bloquear pantalla** o **No hacer nada** (no "Suspender").
 4. Pestaña *Pantalla*: puedes dejar que la pantalla se apague, eso no molesta.
+5. Opcional pero recomendable: en la BIOS del PC busca una opción tipo *Restore on AC Power Loss* / *After Power Failure* y ponla en **Power On**, para que el PC se encienda solo después de un corte de luz.
 
 ---
 
@@ -89,12 +116,18 @@ El instalador hace todo solo: instala lo necesario, crea el servicio `peritaje` 
 Al final verás algo así:
 
 ```
->> Edita /etc/peritaje/peritaje.env y pon tu NOTION_TOKEN, luego: sudo systemctl restart peritaje
+>> Falta el NOTION_TOKEN. Edita /etc/peritaje/peritaje.env y luego: sudo systemctl restart peritaje
+>> Regla del puerto 8000 preparada, pero el cortafuegos está INACTIVO.
+...
 >> Token de la app (cópialo en Ajustes de la app):
 3f9a1c...(64 letras y números)
+>> El mismo token en QR: escanéalo con la cámara del móvil (o Google Lens) y copia el texto.
+(un cuadrado QR dibujado en el Terminal)
 ```
 
-**Apunta ese token de la app**; lo necesitas en el paso 9. Si lo pierdes, se puede volver a ver con:
+Los avisos de "falta el NOTION_TOKEN" y "cortafuegos INACTIVO" son normales en este punto: se arreglan en los pasos 6 y 8. Hasta que pongas el token de Notion, el servicio se queda parado a propósito.
+
+**Guarda ese token de la app**; lo necesitas en el paso 9. Lo más cómodo es escanear el QR con el móvil y copiar el texto, así no hay que teclear 64 caracteres. Si lo pierdes, se puede volver a ver con:
 
 ```
 sudo grep APP_TOKEN /etc/peritaje/peritaje.env
@@ -126,7 +159,7 @@ sudo systemctl restart peritaje
 TOKEN=$(sudo grep '^APP_TOKEN=' /etc/peritaje/peritaje.env | cut -d= -f2) && curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8000/citas-index
 ```
 
-- **Bien:** sale algo como `{"citas":[{"id_encargo":"MA26043441","fecha_hora":"2026-10-14T10:00:00"}]}`. Son tus próximas visitas (de ayer a dentro de 14 días). Si no tienes visitas en esas fechas sale `{"citas":[]}`, y también está bien.
+- **Bien:** sale algo como `{"citas":[{"id_encargo":"MA26043441","id_visita":"1a2b…","fecha_hora":"2026-10-14T10:00:00"}]}`, una línea por visita. Son las visitas de ayer, hoy y mañana (el móvil carga las de hoy, y las de mañana a partir de las 17:00). Si no tienes visitas en esas fechas sale `{"citas":[]}`, y también está bien.
 - **Mal:** si sale un error, ve a [Si algo falla](#si-algo-falla).
 
 ---
@@ -162,6 +195,32 @@ Saldrá algo como `100.101.102.103`. **Apúntala.**
 
 **Recomendado: que el PC no caduque.** Tailscale pide volver a iniciar sesión en cada equipo cada pocos meses. Para que el PC no se quede desconectado sin avisar: entra en <https://login.tailscale.com/admin/machines>, en la fila del PC pulsa `···` → **Disable key expiry**.
 
+**Cerrar el PC a todo lo demás.** Activa el cortafuegos para que el PC solo acepte la app a través de Tailscale.
+
+Si entras al PC por **SSH** desde otro ordenador, primero asegúrate de no cortarte el acceso (el instalador ya lo hace si el SSH está en marcha, pero no está de más repetirlo):
+
+```
+sudo ufw allow OpenSSH
+```
+
+Después activa el cortafuegos:
+
+```
+sudo ufw enable
+```
+
+Responde `s` (o `y`) si pregunta. Comprueba la regla que dejó el instalador:
+
+```
+sudo ufw status
+```
+
+Debe aparecer una línea con `8000/tcp on tailscale0` y `ALLOW`. Si no aparece:
+
+```
+sudo ufw allow in on tailscale0 to any port 8000 proto tcp
+```
+
 ---
 
 ## Paso 9. Conectar la app
@@ -170,11 +229,13 @@ En el móvil, con Tailscale activado:
 
 1. Abre la app **Peritaje** → icono del **engranaje** (arriba a la derecha).
 2. **Dirección del PC:** `http://` + la IP del paso 8 + `:8000`. Ejemplo: `http://100.101.102.103:8000`.
-3. **Token:** el token de la app del paso 5. Lo más cómodo es enviártelo por un medio privado (por ejemplo, a ti mismo por correo) y copiarlo y pegarlo. No lo compartas con nadie.
+3. **Token:** el token de la app del paso 5. Lo más cómodo es escanear con la cámara del móvil (o Google Lens) el QR que mostró el instalador, copiar el texto y pegarlo aquí. Si no lo tienes a mano, vuelve a verlo en el PC con `sudo grep APP_TOKEN /etc/peritaje/peritaje.env`. No lo compartas con nadie.
 4. Pulsa **Probar conexión**. Debe decir **"Conexión correcta con el PC"**.
 5. Pulsa **Guardar**. Vuelve atrás y pulsa **Sincronizar**: aparecerán tus visitas.
 
 El token se guarda **cifrado** en el móvil.
+
+**Comprueba Google Fotos.** La app guarda las fotos en la carpeta `PeritajeApp` del móvil. Son fotos de viviendas de terceros: que no se suban a tu cuenta personal de Google. Abre **Google Fotos** → tu foto de perfil → **Ajustes de Fotos** → **Copia de seguridad** → **Copia de seguridad de carpetas del dispositivo** (o similar) y comprueba que **PeritajeApp está desactivada**. Por defecto lo está; solo hay que asegurarse.
 
 ---
 
@@ -184,6 +245,7 @@ El token se guarda **cifrado** en el móvil.
 2. Pulsa **Finalizar visita** → **Finalizar y enviar**.
 3. En unos segundos el icono de la visita pasa a verde (✓ Enviada) y desaparece de "Activas" (la verás en el filtro "Enviadas").
 4. En Notion, abre ese encargo: el texto aparece bajo **AVANCE APP**. Si la página no tenía ese bloque, el PC crea un desplegable "AVANCE APP" al final de la página.
+5. Fíjate en **dónde** ha aparecido. Si en tu plantilla "AVANCE APP" es una **pestaña** y el texto ha salido en un desplegable al final de la página, es que Notion no deja ver las pestañas desde fuera: en ese caso usa un encabezado o desplegable llamado exactamente `AVANCE APP` en vez de una pestaña, y avísame.
 
 > Para la prueba usa un encargo que no te importe, o borra después el texto de prueba en Notion.
 
@@ -203,8 +265,21 @@ Listo. A partir de aquí el PC funciona solo: arranca al encenderlo, y la app si
 | Ver el token de la app | `sudo grep APP_TOKEN /etc/peritaje/peritaje.env` |
 | Ver la IP de Tailscale | `tailscale ip -4` |
 | Ver si Tailscale está conectado | `tailscale status` |
+| Ver el cortafuegos | `sudo ufw status` |
 
 ### Problemas típicos
+
+**Al instalar sale `Hace falta Python 3.8 o mayor`.**
+El Xubuntu del PC es demasiado antiguo (anterior a 20.04). Hay que instalar Xubuntu 22.04 o 24.04 y empezar de nuevo.
+
+**Al instalar sale `Ejecuta con sudo`.**
+Falta `sudo` delante: `sudo bash deploy/install.sh`.
+
+**Al instalar sale `No such file or directory: deploy/install.sh`.**
+No estás en la carpeta correcta. Mira el nombre exacto con `ls ~` (puede ser `Peritaje-main` o `peritaje-main`) y entra con `cd ~/Peritaje-main/server`.
+
+**El servicio sale *failed* y en `journalctl -u peritaje -n 50` aparece `Address already in use`.**
+Otro programa usa el puerto 8000. Reinicia el PC; si sigue, mira cuál es con `sudo ss -ltnp | grep 8000` y pégame lo que sale.
 
 **En el paso 7 sale `Notion 401` o "API token is invalid".**
 El token de Notion está mal copiado. Repite el paso 6 y fíjate en que no haya espacios ni falte ningún carácter.
@@ -216,16 +291,21 @@ La integración no tiene acceso a la página. Repite el punto 5 del paso 3 (Cone
 El servicio no está en marcha. Mira `systemctl status peritaje`. Si dice *failed*, mira `journalctl -u peritaje -n 50` y pégame lo que sale. Lo más habitual es que falte el `NOTION_TOKEN` (paso 6).
 
 **La app dice "No se puede conectar … ¿Está Tailscale activo?".**
+
+Truco para saber dónde está el fallo: con Tailscale activado en el móvil, abre Chrome y entra en `http://<IP del PC>:8000/salud`. Si ves `{"detail":"Token no válido"}`, el móvil **sí** llega al PC y el problema es el token (mira "El PC rechaza el token" más abajo). Si la página no carga, el móvil no llega al PC:
+
 - Comprueba que Tailscale está **activado en el móvil** (el interruptor de la app de Tailscale).
 - Comprueba que el PC está encendido y que `tailscale status` en el PC no dice *Logged out*. Si lo dice, repite `sudo tailscale up`.
 - Revisa la dirección en Ajustes: tiene que empezar por `http://` (no `https://`) y acabar en `:8000`.
+- La IP tiene que ser la de Tailscale (empieza por `100.`), no la de la wifi de casa (`192.168.…`).
+- Comprueba el cortafuegos con `sudo ufw status` (paso 8, "Cerrar el PC a todo lo demás").
 
 **La app dice "El PC rechaza el token".**
 El token de la app no coincide. Vuelve a verlo con `sudo grep APP_TOKEN /etc/peritaje/peritaje.env` y pégalo de nuevo en Ajustes.
 
 **La conexión es correcta, pero no aparece ninguna visita.**
 El PC solo manda visitas que cumplen todo esto:
-- Están en la base **Visitas** con **Fecha_Visita** entre ayer y dentro de 14 días.
+- Están en la base **Visitas** con **Fecha_Visita** de hoy (o de mañana, si sincronizas a partir de las 17:00).
 - Tienen el **Encargo** relacionado.
 - El encargo no está en estado ANULADO ni PNDT ANULADO.
 
@@ -246,13 +326,40 @@ El servicio y Tailscale arrancan solos. Si no conecta, mira `systemctl status pe
 
 Cuando haya una versión nueva del servidor:
 
+0. **Primero actualiza la app del móvil** (si hay versión nueva), y después el PC.
 1. Repite el **paso 4** (bajar el ZIP y descomprimirlo; sobrescribe la carpeta).
-2. Ejecuta otra vez el **paso 5**.
+2. Ejecuta otra vez el **paso 5**. El instalador reinicia el servicio, así que el código nuevo funciona al momento.
 
 Tu configuración (tokens) se conserva: el instalador no toca `/etc/peritaje/peritaje.env` si ya existe.
 
 ## Seguridad, en corto
 
 - El **token de Notion** solo está en el PC, en un archivo que solo puede leer el administrador y el servicio.
-- El **token de la app** está en el PC y, cifrado, en tu móvil. Si pierdes el móvil, cambia el token: borra la línea `APP_TOKEN=...` del archivo, pon `APP_TOKEN=` seguido de un token nuevo (lo genera `openssl rand -hex 32`), reinicia el servicio y ponlo en la app del móvil nuevo.
+- El **token de la app** está en el PC y, cifrado, en tu móvil.
 - El PC no queda abierto a Internet: solo se entra a través de Tailscale.
+
+### Si pierdes el móvil (cambiar el token de la app)
+
+```
+sudo sed -i "s/^APP_TOKEN=.*/APP_TOKEN=$(openssl rand -hex 32)/" /etc/peritaje/peritaje.env && sudo systemctl restart peritaje && sudo grep '^APP_TOKEN=' /etc/peritaje/peritaje.env
+```
+
+El token viejo deja de servir al momento. Pon el nuevo en la app del móvil nuevo y quita el móvil perdido de <https://login.tailscale.com/admin/machines>.
+
+### Cambiar el token de Notion
+
+En <https://www.notion.so/my-integrations> abre la integración, regenera el secreto y ponlo en el PC como en el paso 6.
+
+## Mantenimiento
+
+- Una vez al mes, pon el sistema al día: `sudo apt update && sudo apt upgrade -y`. Si pide reiniciar, reinicia; el servidor y Tailscale vuelven solos.
+- Si el PC va muy lento, cierra el navegador y otros programas: el servidor no los necesita y tiene un límite de 300 MB de memoria. Con `free -h` ves la memoria libre.
+
+## Dónde está cada cosa en el PC
+
+| Qué | Dónde |
+|---|---|
+| Programa del servidor | `/opt/peritaje/server` |
+| Configuración y tokens | `/etc/peritaje/peritaje.env` (solo lo leen el administrador y el servicio) |
+| Registro de envíos (evita duplicar avances) | `/var/lib/peritaje` |
+| Servicio que lo arranca solo | `/etc/systemd/system/peritaje.service` |

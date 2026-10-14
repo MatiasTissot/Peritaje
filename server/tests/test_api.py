@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Config
 from app.main import crear_app
+from app.notion import NotionError
 from app.servicio import Servicio
 
 TOKEN = "secreto-de-prueba"
@@ -65,11 +66,13 @@ class FakeNotion:
         if db == "E":
             val = list(filtro.values())[1]
             val = list(val.values())[0]
-            return [p for p in self.paginas.values()
-                    if val in p["properties"]["Exp_Gabinete"]["rich_text"][0]["plain_text"]]
+            return [p for p in self.paginas.values() if "Exp_Gabinete" in p["properties"]
+                    and val in p["properties"]["Exp_Gabinete"]["rich_text"][0]["plain_text"]]
         return []
 
     def pagina(self, pid):
+        if pid not in self.paginas:
+            raise NotionError("Notion 404: object_not_found", 404)
         return self.paginas[pid]
 
     def hijos(self, bid):
@@ -77,6 +80,10 @@ class FakeNotion:
 
     def anadir_hijos(self, bid, bloques, after=None):
         self.anadidos.append((bid, bloques, after))
+        for b in bloques:
+            for t in b.get(b["type"], {}).get("rich_text", []):
+                t.setdefault("plain_text", t["text"]["content"])
+        self.bloques.setdefault(bid, []).extend(bloques)
         return {"results": []}
 
 
@@ -164,3 +171,141 @@ def test_avance_encargo_inexistente(entorno):
     r = cliente.post("/avance", headers=H, json={"id_encargo": "NOEXISTE",
                      "fecha_visita_realizada": "2026-09-28T10:15:00", "texto_avance": "x"})
     assert r.json()["estado"] == "error" and "NOEXISTE" in r.json()["detalle"]
+
+
+def test_avance_no_se_duplica_si_se_pierde_el_registro(entorno, tmp_path):
+    cliente, fake, _ = entorno
+    cuerpo = {"id_encargo": "MA26043441", "fecha_visita_realizada": "2026-09-28T10:15:00",
+              "texto_avance": "x", "id_envio": "env-1"}
+    assert cliente.post("/avance", json=cuerpo, headers=H).json() == {"estado": "ok"}
+    (tmp_path / "envios.json").unlink()
+    assert cliente.post("/avance", json=cuerpo, headers=H).json() == {"estado": "ok"}
+    assert len(fake.anadidos) == 1
+
+
+def test_avance_no_escribe_si_el_expediente_esta_repetido(entorno):
+    cliente, fake, _ = entorno
+    fake.paginas["p3"] = encargo("p3", "MA26043441")
+    r = cliente.post("/avance", headers=H, json={"id_encargo": "MA26043441",
+                     "fecha_visita_realizada": "2026-09-28T10:15:00", "texto_avance": "x"})
+    assert r.json()["estado"] == "error" and not fake.anadidos
+
+
+def test_avance_no_usa_coincidencia_parcial(entorno):
+    cliente, fake, _ = entorno
+    r = cliente.post("/avance", headers=H, json={"id_encargo": "MA2604344",
+                     "fecha_visita_realizada": "2026-09-28T10:15:00", "texto_avance": "x"})
+    assert r.json()["estado"] == "error" and not fake.anadidos
+
+
+def test_sin_conexion_con_notion_da_error_claro():
+    import httpx
+    from app.notion import Notion
+
+    def caido(request):
+        raise httpx.ConnectError("sin red")
+
+    n = Notion("x")
+    n._http = httpx.Client(base_url="https://api.notion.com/v1", transport=httpx.MockTransport(caido))
+    with pytest.raises(NotionError, match="Sin conexión"):
+        n.anadir_hijos("b", [{"type": "divider", "divider": {}}])
+
+
+def test_escritura_no_se_reintenta_ante_5xx():
+    import httpx
+    from app.notion import Notion
+    llamadas = []
+
+    def falla(request):
+        llamadas.append(request.method)
+        return httpx.Response(502)
+
+    n = Notion("x")
+    n._http = httpx.Client(base_url="https://api.notion.com/v1", transport=httpx.MockTransport(falla))
+    with pytest.raises(NotionError):
+        n.anadir_hijos("b", [{"type": "divider", "divider": {}}])
+    assert llamadas == ["PATCH"]
+
+
+def test_detalle_de_encargo_borrado_da_404(entorno):
+    cliente, fake, _ = entorno
+    cliente.get("/citas-index", headers=H)  # deja el id en caché
+    assert cliente.get("/citas/MA26043441", headers=H).status_code == 200
+    fake.paginas["p1"]["in_trash"] = True
+    assert cliente.get("/citas/MA26043441", headers=H).status_code == 404
+    # Sale de la caché: si vuelve a la vida en Notion, se encuentra de nuevo.
+    fake.paginas["p1"].pop("in_trash")
+    assert cliente.get("/citas/MA26043441", headers=H).status_code == 200
+    fake.paginas["p1"]["archived"] = True
+    assert cliente.get("/citas/MA26043441", headers=H).status_code == 404
+
+
+def test_detalle_de_encargo_anulado_sigue_respondiendo(entorno):
+    cliente, _, _ = entorno
+    d = cliente.get("/citas/MA26000002", headers=H)
+    assert d.status_code == 200 and d.json()["estado_notion"] == "ANULADO"
+
+
+VA = "a" * 32
+VB = "b" * 32
+
+
+def dos_visitas(fake, manana):
+    va, vb = visita(VA, "p1", f"{manana}T08:00:00.000Z"), visita(VB, "p1", f"{manana}T15:00:00.000Z")
+    vb["properties"]["Notas_Campo"]["rich_text"] = rt("Segunda visita: llevar escalera")
+    fake.visitas = [va, vb]
+    fake.paginas[VA], fake.paginas[VB] = va, vb
+
+
+def test_indice_una_entrada_por_visita(entorno):
+    cliente, fake, manana = entorno
+    dos_visitas(fake, manana)
+    citas = cliente.get("/citas-index", headers=H).json()["citas"]
+    assert [(c["id_encargo"], c["id_visita"]) for c in citas] == [("MA26043441", VA), ("MA26043441", VB)]
+
+
+def test_detalle_de_una_visita(entorno):
+    cliente, fake, manana = entorno
+    dos_visitas(fake, manana)
+    d = cliente.get(f"/visitas/{VB}", headers=H).json()
+    assert d["id_visita"] == VB and d["id_encargo"] == "MA26043441"
+    assert d["notas_visita"] == "Segunda visita: llevar escalera"
+    assert d["fecha_visita"].startswith(manana) and d["fecha_visita"][11:13] in ("16", "17")
+    assert d["asegurado"] == "Juan Pérez" and len(d["contactos"]) == 2
+
+
+def test_visita_inexistente_o_borrada_da_404(entorno):
+    cliente, fake, manana = entorno
+    dos_visitas(fake, manana)
+    assert cliente.get("/visitas/" + "c" * 32, headers=H).status_code == 404
+    assert cliente.get("/visitas/no-es-un-id", headers=H).status_code == 404
+    fake.paginas[VA]["in_trash"] = True
+    assert cliente.get(f"/visitas/{VA}", headers=H).status_code == 404
+    fake.paginas["p1"]["archived"] = True
+    assert cliente.get(f"/visitas/{VB}", headers=H).status_code == 404
+
+
+def test_visita_sin_fecha_devuelve_fecha_nula(entorno):
+    cliente, fake, manana = entorno
+    dos_visitas(fake, manana)
+    fake.paginas[VA]["properties"]["Fecha_Visita"]["date"] = None
+    d = cliente.get(f"/visitas/{VA}", headers=H).json()
+    assert d["fecha_visita"] is None and d["notas_visita"] == "Avisar antes de subir"
+
+
+def test_avance_con_visita_lleva_su_fecha(entorno):
+    cliente, fake, manana = entorno
+    dos_visitas(fake, manana)
+    r = cliente.post("/avance", headers=H, json={"id_encargo": "MA26043441", "id_visita": VB,
+                     "fecha_visita_realizada": "2026-09-28T10:15:00", "texto_avance": "x"})
+    assert r.json() == {"estado": "ok"}
+    cabecera = fake.anadidos[0][1][0]["paragraph"]["rich_text"][0]["text"]["content"]
+    assert "(realizada 28/09/2026 10:15)" in cabecera
+    assert datetime.strptime(manana, "%Y-%m-%d").strftime("%d/%m/%Y") in cabecera
+
+
+def test_avance_con_visita_borrada_se_escribe_igual(entorno):
+    cliente, fake, _ = entorno
+    r = cliente.post("/avance", headers=H, json={"id_encargo": "MA26043441", "id_visita": "c" * 32,
+                     "fecha_visita_realizada": "2026-09-28T10:15:00", "texto_avance": "x"})
+    assert r.json() == {"estado": "ok"} and len(fake.anadidos) == 1

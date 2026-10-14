@@ -1,8 +1,10 @@
 """Configuración del servidor, leída de variables de entorno.
 
 Las credenciales (token de Notion y token de la app) nunca van en el código ni
-en git: se cargan desde /etc/peritaje/peritaje.env (ver deploy/) con permisos 600.
+en git: se cargan desde /etc/peritaje/peritaje.env (ver deploy/) con permisos 640.
 """
+from __future__ import annotations
+
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -24,7 +26,7 @@ class Config:
     db_contactos: str
     # Ventana de citas que se mandan al móvil: desde hace N días hasta dentro de M días.
     dias_atras: int = 1
-    dias_adelante: int = 14
+    dias_adelante: int = 1
     zona_horaria: str = "Europe/Madrid"
     # Texto exacto del bloque/pestaña de Notion donde se escribe el avance.
     titulo_avance: str = "AVANCE APP"
@@ -42,7 +44,7 @@ def cargar() -> Config:
         db_visitas=_req("NOTION_DB_VISITAS"),
         db_contactos=_req("NOTION_DB_CONTACTOS"),
         dias_atras=int(os.environ.get("DIAS_ATRAS", "1")),
-        dias_adelante=int(os.environ.get("DIAS_ADELANTE", "14")),
+        dias_adelante=int(os.environ.get("DIAS_ADELANTE", "1")),
         zona_horaria=os.environ.get("ZONA_HORARIA", "Europe/Madrid"),
         titulo_avance=os.environ.get("TITULO_AVANCE", "AVANCE APP"),
         estados_excluidos=tuple(e.strip() for e in excluidos.split(",") if e.strip()),

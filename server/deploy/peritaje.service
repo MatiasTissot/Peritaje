@@ -10,7 +10,8 @@ EnvironmentFile=/etc/peritaje/peritaje.env
 # Escucha en todas las interfaces; el cortafuegos (ufw) solo deja entrar por Tailscale.
 ExecStart=/opt/peritaje/server/.venv/bin/uvicorn app.main:app --factory --host 0.0.0.0 --port 8000 --workers 1
 Restart=always
-RestartSec=5
+# Sin NOTION_TOKEN el servicio no arranca; 10 s entre intentos para no cargar el PC.
+RestartSec=10
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true

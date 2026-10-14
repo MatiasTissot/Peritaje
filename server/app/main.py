@@ -1,13 +1,17 @@
 """Servidor del PC: puente entre la app del móvil y Notion.
 
 Endpoints (todos con Authorization: Bearer <APP_TOKEN>):
-  GET  /citas-index          índice ligero de citas (id_encargo + fecha_hora)
-  GET  /citas/{id_encargo}   detalle de una cita
+  GET  /citas-index          índice ligero: una entrada por visita (id_encargo, id_visita, fecha_hora)
+  GET  /citas/{id_encargo}   detalle de una cita (datos antiguos: una visita por encargo)
+  GET  /visitas/{id_visita}  detalle de una visita concreta
   POST /avance               escribe el avance en el bloque AVANCE APP del encargo
   GET  /salud                comprobación de conexión desde la app
 """
+from __future__ import annotations
+
 import hmac
 import logging
+from typing import Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
@@ -24,10 +28,12 @@ class AvanceIn(BaseModel):
     fecha_visita_realizada: str
     texto_avance: str
     # Opcional: identificador único del envío para que un reintento no duplique el avance.
-    id_envio: str | None = None
+    id_envio: Optional[str] = None
+    # Opcional: visita concreta (un encargo puede tener varias). None en datos antiguos.
+    id_visita: Optional[str] = None
 
 
-def crear_app(servicio: Servicio | None = None, app_token: str | None = None) -> FastAPI:
+def crear_app(servicio: Optional[Servicio] = None, app_token: Optional[str] = None) -> FastAPI:
     if servicio is None:
         cfg = config.cargar()
         servicio = Servicio(cfg, Notion(cfg.notion_token))
@@ -62,11 +68,21 @@ def crear_app(servicio: Servicio | None = None, app_token: str | None = None) ->
             log.exception("Error leyendo cita %s", id_encargo)
             raise HTTPException(status_code=502, detail=str(e))
 
+    @app.get("/visitas/{id_visita}", dependencies=[Depends(autorizar)])
+    def visita(id_visita: str):
+        try:
+            return servicio.detalle_visita(id_visita)
+        except EncargoNoEncontrado as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except NotionError as e:
+            log.exception("Error leyendo visita %s", id_visita)
+            raise HTTPException(status_code=502, detail=str(e))
+
     @app.post("/avance", dependencies=[Depends(autorizar)])
     def avance(datos: AvanceIn):
         try:
             servicio.escribir_avance(datos.id_encargo, datos.fecha_visita_realizada,
-                                     datos.texto_avance, datos.id_envio)
+                                     datos.texto_avance, datos.id_envio, datos.id_visita)
             return {"estado": "ok"}
         except EncargoNoEncontrado as e:
             return {"estado": "error", "detalle": str(e)}
