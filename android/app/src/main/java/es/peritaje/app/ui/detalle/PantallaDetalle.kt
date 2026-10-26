@@ -410,17 +410,23 @@ private fun PestanaDatos(c: Cita, context: Context) {
                 Dato("Notas de la visita", c.notasVisita)
             }
         }
+        // Todos los contactos del encargo en Notion, con cualquier rol (inquilino, comunidad...).
         val otros = contactos.filter { it.nombre != c.asegurado || it.telefono != c.telefonoContacto }
-        if (otros.isNotEmpty()) {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Etiqueta("Otros contactos")
-                    otros.forEachIndexed { i, k ->
-                        if (i > 0) HorizontalDivider()
-                        Text("${k.rol}: ${k.nombre}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-                        k.notas?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
-                        k.telefono?.let { BotonLlamar(context, it) }
-                    }
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Etiqueta("Contactos del encargo")
+                if (otros.isEmpty()) {
+                    Text("No hay más contactos en Notion.", style = MaterialTheme.typography.bodyMedium)
+                }
+                otros.forEachIndexed { i, k ->
+                    if (i > 0) HorizontalDivider()
+                    Text(k.rol.ifBlank { "Otro" }, style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(k.nombre.ifBlank { "—" }, style = MaterialTheme.typography.titleMedium)
+                    k.direccion?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                    k.email?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                    k.notas?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                    k.telefono?.takeIf { it.isNotBlank() }?.let { BotonLlamar(context, it) }
                 }
             }
         }

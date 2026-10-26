@@ -50,6 +50,8 @@ data class ContactoDto(
     val nombre: String = "",
     val telefono: String? = null,
     val notas: String? = null,
+    val email: String? = null,
+    val direccion: String? = null,
 )
 
 @Serializable
