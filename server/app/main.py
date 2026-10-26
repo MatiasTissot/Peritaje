@@ -21,7 +21,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
-from . import config
+from . import VERSION, config
 from .drive import Drive, DriveError
 from .notion import Notion, NotionError
 from .servicio import EncargoNoEncontrado, Servicio
@@ -79,7 +79,7 @@ def crear_app(servicio: Optional[Servicio] = None, app_token: Optional[str] = No
 
     @app.get("/salud", dependencies=[Depends(autorizar)])
     def salud():
-        return {"estado": "ok"}
+        return {"estado": "ok", "version": VERSION}
 
     @app.get("/citas-index", dependencies=[Depends(autorizar)])
     def citas_index():

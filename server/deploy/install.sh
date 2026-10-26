@@ -5,6 +5,8 @@ set -euo pipefail
 
 [ "$(id -u)" -eq 0 ] || { echo "Ejecuta con sudo"; exit 1; }
 ORIGEN="$(cd "$(dirname "$0")/.." && pwd)"
+VERSION_SERVIDOR=$(sed -n 's/^VERSION = "\(.*\)"/\1/p' "$ORIGEN/app/__init__.py")
+echo ">> Instalando el servidor versión $VERSION_SERVIDOR"
 
 # Python 3.8 o mayor (Xubuntu 20.04 en adelante).
 if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 8))' 2>/dev/null; then
@@ -40,7 +42,7 @@ if grep -q '^NOTION_TOKEN=.\+' /etc/peritaje/peritaje.env; then
   systemctl restart peritaje || true
   sleep 3
   if systemctl is-active --quiet peritaje; then
-    echo ">> Servicio peritaje en marcha"
+    echo ">> Servicio peritaje en marcha (versión $VERSION_SERVIDOR)"
   else
     echo ">> El servicio no arranca. Mira el motivo con: journalctl -u peritaje -n 50"
   fi

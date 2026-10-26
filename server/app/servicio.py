@@ -28,7 +28,7 @@ _HEX32 = re.compile(r"^[0-9a-fA-F]{32}$")
 _NO_SEGURO = re.compile(r"[^A-Za-z0-9_-]")
 
 # Tipos de bloque de Notion a los que se les pueden añadir hijos.
-_CONTENEDORES = {"toggle", "callout", "quote", "tab", "column", "column_list", "synced_block"}
+_CONTENEDORES = {"toggle", "callout", "quote", "column", "column_list", "synced_block"}
 
 
 class EncargoNoEncontrado(Exception):
@@ -257,15 +257,29 @@ class Servicio:
     def _ficha(self, encargo: dict, elegida) -> dict:
         page_id = encargo["id"]
         relacion = {"property": "Encargo", "relation": {"contains": page_id}}
-        contactos = []
+        contactos, con_titulo = [], set()
         for c in self.notion.consultar(self.cfg.db_contactos, relacion):
+            rol = prop(c, "Rol") or "Otro"
+            nombre = (prop(c, "Nombre") or "").strip()
+            titulo = (prop(c, "Contacto") or "").strip()
+            # Si el título dice algo más que "Rol - Nombre" (p. ej. "PRESIDENTE"), se
+            # muestra delante del nombre: si no, en el móvil no se sabría quién es.
+            if titulo and _clave(titulo) not in (_clave(f"{rol} - {nombre}"), _clave(nombre)):
+                nombre = f"{titulo} ({nombre})" if nombre else titulo
+                con_titulo.add(len(contactos))
             contactos.append({
-                "rol": prop(c, "Rol") or "Otro",
-                "nombre": prop(c, "Nombre") or prop(c, "Contacto") or "",
+                "rol": rol,
+                "nombre": nombre,
                 "telefono": _vacio_a_none(prop(c, "Telefono")),
                 "notas": _vacio_a_none(prop(c, "Notas_Contacto")),
+                "email": _vacio_a_none(prop(c, "Email")),
+                "direccion": _vacio_a_none(prop(c, "Direccion")),
             })
-        asegurado = next((c for c in contactos if c["rol"] == "Asegurado"), contactos[0] if contactos else None)
+        # El asegurado de la ficha: mejor uno con título normal ("Asegurado - Nombre") que
+        # uno con título propio como "PRESIDENTE", aunque los dos tengan rol Asegurado.
+        asegurados = [i for i, c in enumerate(contactos) if c["rol"] == "Asegurado"]
+        asegurados.sort(key=lambda i: i in con_titulo)
+        asegurado = contactos[asegurados[0]] if asegurados else (contactos[0] if contactos else None)
 
         calle = prop(encargo, "Direccion Calle") or ""
         piso = prop(encargo, "Piso, Puerta") or ""
@@ -304,26 +318,55 @@ class Servicio:
         tmp.write_text(json.dumps(previos))
         tmp.replace(self._registro)
 
-    def _buscar_destino(self, page_id: str) -> tuple[str, str | None] | None:
-        """Busca el bloque titulado AVANCE APP o AVANCE APK (pestaña, desplegable o encabezado).
+    def _buscar_destino(self, page_id: str) -> tuple[tuple[str, str | None] | None, str | None]:
+        """Busca dónde escribir el avance.
 
-        Devuelve (padre, after): se añaden hijos a `padre`; si `after` no es None,
-        se insertan justo debajo de ese bloque (caso de encabezado normal).
+        Devuelve (destino, pestanas). `destino` es (padre, after): se añaden hijos a
+        `padre`; si `after` no es None, se insertan justo debajo de ese bloque (caso de
+        encabezado normal). `pestanas` es el primer bloque de pestañas de la página.
+
+        Gana la pestaña AVANCE APP (o AVANCE APK). Si la página tiene pestañas pero no
+        esa, destino es None para que se cree la pestaña; un desplegable o encabezado
+        con ese título (avances antiguos) solo se usa en páginas sin pestañas.
         """
         objetivos = {self.cfg.titulo_avance.strip().upper(), "AVANCE APP", "AVANCE APK"}
         pendientes = [(page_id, 0)]
+        otro, pestanas = None, None
         while pendientes:
             padre, nivel = pendientes.pop(0)
             for b in self.notion.hijos(padre):
                 tipo = b.get("type", "")
+                if tipo == "tab":
+                    # Cada pestaña es un párrafo hijo del bloque "tab": su texto es el
+                    # nombre y su contenido va como hijos de ese párrafo.
+                    pestanas = pestanas or b["id"]
+                    for p in self.notion.hijos(b["id"]):
+                        if _texto((p.get(p.get("type", ""), {}) or {}).get("rich_text")).upper() in objetivos:
+                            return (p["id"], None), b["id"]
+                    continue
                 datos = b.get(tipo, {}) or {}
-                if _texto(datos.get("rich_text")).upper() in objetivos:
+                if otro is None and _texto(datos.get("rich_text")).upper() in objetivos:
                     if tipo in _CONTENEDORES or datos.get("is_toggleable"):
-                        return b["id"], None
-                    return padre, b["id"]
-                if b.get("has_children") and nivel < 3 and (tipo in _CONTENEDORES or tipo == "tab"):
+                        otro = (b["id"], None)
+                    else:
+                        otro = (padre, b["id"])
+                elif b.get("has_children") and nivel < 3 and tipo in _CONTENEDORES:
                     pendientes.append((b["id"], nivel + 1))
-        return None
+        return (None if pestanas else otro), pestanas
+
+    def _crear_pestana(self, page_id: str, pestanas: str | None) -> str:
+        """Crea la pestaña del avance y devuelve el id del párrafo que la representa."""
+        titulo = {"object": "block", "type": "paragraph", "paragraph": {"rich_text": [
+            {"type": "text", "text": {"content": self.cfg.titulo_avance}}]}}
+        if pestanas:
+            self.notion.anadir_hijos(pestanas, [titulo])
+        else:
+            # Los hijos van dentro de "tab", como en cualquier bloque; fuera Notion da 400.
+            self.notion.anadir_hijos(page_id, [{"object": "block", "type": "tab", "tab": {"children": [titulo]}}])
+        destino, _ = self._buscar_destino(page_id)
+        if destino is None:
+            raise NotionError("No se pudo crear la pestaña del avance en Notion")
+        return destino[0]
 
     def _crear_contactos(self, page_id: str, contactos: list[dict]):
         relacion = {"property": "Encargo", "relation": {"contains": page_id}}
@@ -411,26 +454,17 @@ class Servicio:
             bloques += [self._parrafo(linea) for linea in texto.splitlines()]
             bloques.append({"object": "block", "type": "divider", "divider": {}})
 
-            destino = self._buscar_destino(encargo["id"])
+            destino, pestanas = self._buscar_destino(encargo["id"])
             if destino is None:
-                # No existe aún: se crea un desplegable "AVANCE APP" al final de la página.
-                self.notion.anadir_hijos(encargo["id"], [{
-                    "object": "block", "type": "heading_2",
-                    # Los hijos van dentro de "heading_2"; fuera de él Notion rechaza el bloque (400).
-                    "heading_2": {"is_toggleable": True, "rich_text": [
-                        {"type": "text", "text": {"content": self.cfg.titulo_avance}}],
-                        "children": bloques[:99]},
-                }])
-                if len(bloques) > 99:
-                    destino = self._buscar_destino(encargo["id"])
-                    self.notion.anadir_hijos(destino[0], bloques[99:])
-            else:
-                # Con encabezado normal se inserta justo debajo (lo más reciente arriba).
-                padre, after = destino
-                if id_envio and self._ya_en_notion(padre, ref):
-                    self._apuntar_envio(id_envio)
-                    return "ya_registrado"
-                self.notion.anadir_hijos(padre, bloques, after=after)
+                # Aún no existe: se crea la pestaña "AVANCE APP" y el avance va dentro.
+                destino = (self._crear_pestana(encargo["id"], pestanas), None)
+            padre, after = destino
+            if id_envio and self._ya_en_notion(padre, ref):
+                self._apuntar_envio(id_envio)
+                return "ya_registrado"
+            # En una pestaña o desplegable se añade al final; bajo un encabezado normal,
+            # justo debajo de él.
+            self.notion.anadir_hijos(padre, bloques, after=after)
             if id_envio:
                 self._apuntar_envio(id_envio)
             return "ok"
