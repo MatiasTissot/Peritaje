@@ -17,8 +17,8 @@ class Contenedor(context: Context) {
     private val db = BaseDatos.crear(context)
     val fotos = AlmacenFotos(context, db.fotos(), db.citas())
     // Las fotos van a Drive a través del PC, con la misma conexión que el avance.
-    val subidaFotos = SubidaFotos(context.applicationContext, db.fotos(), db.citas()) { repositorio.apiFotos() }
-    val repositorio = Repositorio(db, AlmacenToken(context), subidaFotos, fotos::hayCapturaEnCurso)
+    val subidaFotos: SubidaFotos = SubidaFotos(context.applicationContext, db.fotos(), db.citas()) { repositorio.apiFotos() }
+    val repositorio: Repositorio = Repositorio(db, AlmacenToken(context), subidaFotos, fotos::hayCapturaEnCurso)
 
     /** Ámbito de toda la app: lo que se lanza aquí (autoguardado, rescate de fotos) no se cancela al salir de una pantalla. */
     val ambito = CoroutineScope(SupervisorJob() + Dispatchers.IO)
