@@ -16,7 +16,7 @@ from typing import List, Optional
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
-from . import config
+from . import VERSION, config
 from .notion import Notion, NotionError
 from .servicio import EncargoNoEncontrado, Servicio
 
@@ -61,7 +61,7 @@ def crear_app(servicio: Optional[Servicio] = None, app_token: Optional[str] = No
 
     @app.get("/salud", dependencies=[Depends(autorizar)])
     def salud():
-        return {"estado": "ok"}
+        return {"estado": "ok", "version": VERSION}
 
     @app.get("/citas-index", dependencies=[Depends(autorizar)])
     def citas_index():

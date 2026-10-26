@@ -414,3 +414,9 @@ def test_contactos_de_todos_los_roles_y_titulo_libre(entorno):
     assert [(c["rol"], c["nombre"]) for c in contactos] == [
         ("Asegurado", "PRESIDENTE (Francisco, plaza 17)"), ("Comunidad", "Presidente"),
         ("Asegurado", "Juan Pérez"), ("Inquilino", "Ana")]
+
+
+def test_salud_dice_la_version(entorno):
+    from app import VERSION
+    cliente, _, _ = entorno
+    assert cliente.get("/salud", headers=H).json() == {"estado": "ok", "version": VERSION}

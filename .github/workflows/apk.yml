@@ -64,9 +64,13 @@ jobs:
           version=$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' app/build.gradle.kts)
           apk="peritaje-${version}.apk"
           cp app/build/outputs/apk/debug/app-debug.apk "$apk"
+          # El servidor del PC va en el mismo sitio, también con su versión en el nombre.
+          sver=$(sed -n 's/^VERSION = "\(.*\)"/\1/p' ../server/app/__init__.py)
+          zip="peritaje-servidor-${sver}.zip"
+          (cd .. && zip -qr "android/$zip" server -x 'server/tests/*' '*__pycache__*' '*.pyc')
           gh release delete ultima -y --cleanup-tag || true
-          gh release create ultima "$apk" --title "Versión ${version}" --prerelease \
-            --notes "APK ${version} compilado desde ${GITHUB_SHA::7}. Instalar encima de la versión anterior."
+          gh release create ultima "$apk" "$zip" --title "App ${version} · Servidor ${sver}" --prerelease \
+            --notes "APK ${version} y servidor ${sver} compilados desde ${GITHUB_SHA::7}. Instalar encima de la versión anterior."
 
   servidor:
     # 22.04 todavía ofrece Python 3.8, la versión mínima que admite el PC (Xubuntu 20.04).
