@@ -104,6 +104,19 @@ class MigracionesTest {
 
                 bd.contactos().borrar(idContacto)
                 assertEquals(1, bd.citas().borrarSiVacia("visita2"))
+
+                // Subida a Drive (v5): la foto antigua llega sin subir y no se sube hasta finalizar.
+                assertEquals(0, bd.fotos().porSubir().size)
+                assertEquals(1, bd.citas().finalizar("visita1", 1760000200000, "envio-1"))
+                val foto = bd.fotos().porSubir().single()
+                assertEquals(EstadoSubida.PENDIENTE, foto.estadoSubida)
+                assertNull(foto.idDrive)
+                assertNull(foto.errorSubida)
+                bd.fotos().marcarFallo(foto.id, EstadoSubida.PENDIENTE, "Sin conexión con el PC")
+                assertEquals("Sin conexión con el PC", bd.fotos().porSubir().single().errorSubida)
+                bd.fotos().marcarSubida(foto.id, "drive-1", 1760000300000)
+                assertEquals(0, bd.fotos().porSubir().size)
+                assertEquals(1, bd.fotos().contar("visita1"))
             }
         } finally {
             bd.close()

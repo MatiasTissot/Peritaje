@@ -10,6 +10,7 @@ No hace falta saber programar. Solo hay que copiar y pegar órdenes en el **Term
 
 ```
 Móvil (app)  ──Tailscale──>  PC (servidor)  ──Internet──>  Notion
+                                            ──Internet──>  Google Drive (fotos)
 ```
 
 - La app **nunca** habla con Notion: todo pasa por el PC. Sin el PC encendido y conectado, la app no puede traer visitas ni enviar avances (lo que hagas en la visita se guarda en el móvil y se envía cuando el PC vuelva a responder).
@@ -253,6 +254,69 @@ Listo. A partir de aquí el PC funciona solo: arranca al encenderlo, y la app si
 
 ---
 
+## Paso 11. Fotos a Google Drive
+
+Al finalizar una visita, el móvil manda cada foto al PC y el PC la sube a tu Drive, dentro de la carpeta del encargo que ya tienes:
+
+```
+Expedientes_2026/0043 - E26L0267381 - MA26043441 - EUROP/Fotografias/Visita_2026-10-26/
+```
+
+El PC busca la carpeta por el número de expediente (también dentro de `0000 - Cerrados`). Si no existe, la crea con el nombre del encargo en Notion. Las fotos del móvil **no se borran nunca**: la subida es una copia.
+
+Esto se hace **una sola vez**. Hace falta el **escritorio del PC** (delante o por Escritorio remoto), porque se abre el navegador.
+
+### 11.1 Crear el proyecto en Google Cloud
+
+1. En el navegador, entra en <https://console.cloud.google.com> con la cuenta de Google de tu Drive (acepta las condiciones si es la primera vez).
+2. Arriba a la izquierda, en el selector de proyectos → **Proyecto nuevo** → nombre `Peritaje` → **Crear**. Espera unos segundos y comprueba que arriba pone `Peritaje`.
+
+### 11.2 Activar la API de Drive
+
+1. Abre <https://console.cloud.google.com/apis/library/drive.googleapis.com> (con el proyecto `Peritaje` seleccionado).
+2. Pulsa **Habilitar**.
+
+### 11.3 Pantalla de permiso
+
+1. Abre <https://console.cloud.google.com/auth/overview> → **Comenzar**.
+2. **Nombre de la aplicación:** `Peritaje PC`. **Correo de asistencia:** el tuyo. → Siguiente.
+3. **Público:** **Externo** → Siguiente.
+4. **Información de contacto:** tu correo → Siguiente → acepta la política → **Crear**.
+5. Menú de la izquierda → **Público** → **Publicar aplicación** → **Confirmar**. Debe quedar en **En producción**.
+   Esto es importante: en "Prueba", Google retira el permiso cada 7 días y las fotos dejarían de subir. No hace falta que Google verifique nada: la app es solo para ti.
+
+### 11.4 Crear la llave del PC
+
+1. Menú de la izquierda → **Clientes** → **Crear cliente**.
+2. **Tipo de aplicación:** **Aplicación de escritorio**. **Nombre:** `PC peritaje` → **Crear**.
+3. Sale una ventana con el **ID de cliente** y el **Secreto de cliente**. Déjala abierta (o descarga el JSON): los vas a pegar en el paso siguiente. No los compartas.
+
+### 11.5 Dar permiso al PC
+
+Con el programa del PC actualizado (pasos 4 y 5), en el Terminal del PC:
+
+```
+cd /opt/peritaje/server && sudo .venv/bin/python -m app.autorizar_drive
+```
+
+1. Pega el **ID de cliente** y pulsa Enter. Pega el **Secreto de cliente** y pulsa Enter.
+2. Se abre el navegador (si no, copia la dirección que sale en el Terminal y ábrela en el navegador del PC).
+3. Elige tu cuenta de Google. Saldrá **"Google no ha verificado esta aplicación"**: pulsa **Configuración avanzada** → **Ir a Peritaje PC** → marca el permiso de Drive → **Continuar**.
+4. El navegador dice "Listo". En el Terminal debe salir **"Veo tu carpeta Expedientes_2026 en Drive"** y **"Guardado"**.
+5. Reinicia el servicio:
+
+```
+sudo systemctl restart peritaje
+```
+
+### 11.6 Probar
+
+Finaliza una visita de prueba con una foto. En la pestaña **Fotos** de esa visita verás "Subiendo a Drive…" y luego **"Todas las fotos están en Drive"**. Comprueba en Drive que la foto está en `Fotografias/Visita_<fecha>` del encargo.
+
+Si el PC está apagado o sin red, las fotos esperan en el móvil y se suben solas cuando vuelva; el botón **Sincronizar** lo relanza al momento.
+
+---
+
 ## Si algo falla
 
 ### Órdenes útiles
@@ -346,6 +410,10 @@ sudo sed -i "s/^APP_TOKEN=.*/APP_TOKEN=$(openssl rand -hex 32)/" /etc/peritaje/p
 
 El token viejo deja de servir al momento. Pon el nuevo en la app del móvil nuevo y quita el móvil perdido de <https://login.tailscale.com/admin/machines>.
 
+### Quitar el permiso de Drive al PC
+
+En <https://myaccount.google.com/permissions> quita **Peritaje PC**. Para volver a darlo, repite el paso 11.5.
+
 ### Cambiar el token de Notion
 
 En <https://www.notion.so/my-integrations> abre la integración, regenera el secreto y ponlo en el PC como en el paso 6.
@@ -362,4 +430,5 @@ En <https://www.notion.so/my-integrations> abre la integración, regenera el sec
 | Programa del servidor | `/opt/peritaje/server` |
 | Configuración y tokens | `/etc/peritaje/peritaje.env` (solo lo leen el administrador y el servicio) |
 | Registro de envíos (evita duplicar avances) | `/var/lib/peritaje` |
+| Fotos de paso hacia Drive (se borran al subirlas) | `/var/lib/peritaje/fotos_entrantes` |
 | Servicio que lo arranca solo | `/etc/systemd/system/peritaje.service` |

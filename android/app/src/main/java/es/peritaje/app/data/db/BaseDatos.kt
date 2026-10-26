@@ -171,6 +171,27 @@ interface FotoDao {
 
     @Query("UPDATE foto SET quitada = 1 WHERE id = :id")
     suspend fun quitar(id: Long)
+
+    /**
+     * Fotos que faltan por subir a Drive: las de visitas ya finalizadas, sin quitar, que no
+     * estén confirmadas. SUBIENDO también cuenta (la app pudo cerrarse a mitad de subida).
+     */
+    @Query(
+        "SELECT f.* FROM foto f JOIN cita c ON c.idVisita = f.idVisita " +
+            "WHERE f.quitada = 0 AND f.estadoSubida != 'SUBIDA' AND c.estado != 'PENDIENTE' " +
+            "ORDER BY f.intentos, f.fechaCaptura"
+    )
+    suspend fun porSubir(): List<FotoPendiente>
+
+    @Query("UPDATE foto SET estadoSubida = 'SUBIENDO' WHERE id = :id")
+    suspend fun marcarSubiendo(id: Long)
+
+    @Query("UPDATE foto SET estadoSubida = 'SUBIDA', idDrive = :idDrive, fechaSubida = :ahora, errorSubida = NULL WHERE id = :id")
+    suspend fun marcarSubida(id: Long, idDrive: String?, ahora: Long)
+
+    /** [estado] es PENDIENTE (se reintentará) o ERROR (no se puede subir sin que el perito haga algo). */
+    @Query("UPDATE foto SET estadoSubida = :estado, errorSubida = :error, intentos = intentos + 1 WHERE id = :id")
+    suspend fun marcarFallo(id: Long, estado: EstadoSubida, error: String)
 }
 
 @Dao
@@ -226,7 +247,7 @@ class Conversores {
 
 @Database(
     entities = [Cita::class, FotoPendiente::class, Configuracion::class, ContactoVisita::class],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 @TypeConverters(Conversores::class)
@@ -311,10 +332,19 @@ abstract class BaseDatos : RoomDatabase() {
             }
         }
 
+        /** v0.1.7: subida de fotos a Google Drive (vía el PC). */
+        val MIGRACION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE foto ADD COLUMN idDrive TEXT")
+                db.execSQL("ALTER TABLE foto ADD COLUMN fechaSubida INTEGER")
+                db.execSQL("ALTER TABLE foto ADD COLUMN errorSubida TEXT")
+            }
+        }
+
         // Sin migraciones destructivas: si faltara una, la app debe fallar antes que borrar datos de visitas.
         fun crear(context: Context): BaseDatos =
             Room.databaseBuilder(context, BaseDatos::class.java, "peritaje.db")
-                .addMigrations(MIGRACION_1_2, MIGRACION_2_3, MIGRACION_3_4)
+                .addMigrations(MIGRACION_1_2, MIGRACION_2_3, MIGRACION_3_4, MIGRACION_4_5)
                 .build()
     }
 }

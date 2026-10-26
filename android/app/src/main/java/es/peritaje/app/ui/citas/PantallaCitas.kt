@@ -47,6 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import es.peritaje.app.BuildConfig
 import es.peritaje.app.data.Repositorio
 import es.peritaje.app.data.db.CitaResumen
 import es.peritaje.app.data.db.EstadoCita
@@ -95,7 +96,14 @@ fun PantallaCitas(vm: CitasViewModel, abrirCita: (String) -> Unit, abrirAjustes:
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Visitas") },
+                title = {
+                    Column {
+                        Text("Visitas")
+                        // Versión siempre a la vista, para comprobar que se usa la última.
+                        Text("v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                },
                 actions = {
                     BotonNube(sync.nube) { verEstadoSync = true }
                     IconButton(onClick = abrirAjustes, modifier = Modifier.size(56.dp)) {

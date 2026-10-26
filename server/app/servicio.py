@@ -164,6 +164,14 @@ class Servicio:
             raise EncargoNoEncontrado(f"El encargo {id_encargo} está borrado en Notion")
         return pagina
 
+    def titulo_encargo(self, id_encargo: str) -> str | None:
+        """Título del encargo en Notion ("0043 - E26L... - MA26043441 - EUROP"), para nombrar
+        su carpeta de Drive si aún no existe. Si Notion falla se sigue sin él."""
+        try:
+            return prop(self._resolver(id_encargo), "ID_Encargo") or None
+        except (EncargoNoEncontrado, NotionError):
+            return None
+
     # GET /citas-index
 
     def citas_index(self) -> list[dict]:

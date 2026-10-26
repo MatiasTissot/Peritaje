@@ -15,9 +15,11 @@ import androidx.work.workDataOf
 import es.peritaje.app.PeritajeApp
 import es.peritaje.app.data.ResultadoEnvio
 import es.peritaje.app.data.SinConfiguracion
+import es.peritaje.app.data.fotos.ResultadoSubida
 import java.util.concurrent.TimeUnit
 
 private val Context.repo get() = (applicationContext as PeritajeApp).contenedor.repositorio
+private val Context.subida get() = (applicationContext as PeritajeApp).contenedor.subidaFotos
 
 /** Trae el índice de citas del PC y las que falten. */
 class SincronizarWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
@@ -28,6 +30,8 @@ class SincronizarWorker(ctx: Context, params: WorkerParameters) : CoroutineWorke
         applicationContext.repo.idsVisitadas().forEach {
             Planificador.enviarAvance(applicationContext, it, reintentarYa = manual)
         }
+        // Y las fotos que falten por subir a Drive (en la manual, sin esperar al siguiente reintento).
+        Planificador.subirFotos(applicationContext, reintentarYa = manual)
         applicationContext.repo.sincronizar()
         Result.success()
     } catch (e: SinConfiguracion) {
@@ -54,6 +58,18 @@ class EnviarAvanceWorker(ctx: Context, params: WorkerParameters) : CoroutineWork
     }
 }
 
+/** Sube a Drive (a través del PC) las fotos de las visitas finalizadas. Nunca borra nada del móvil. */
+class SubirFotosWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
+    override suspend fun doWork(): Result = try {
+        when (applicationContext.subida.subirPendientes()) {
+            ResultadoSubida.Terminado -> Result.success()
+            is ResultadoSubida.Reintentar -> Result.retry()
+        }
+    } catch (e: SinConfiguracion) {
+        Result.failure()
+    }
+}
+
 /** Borra de la base local las citas enviadas hace más de 7 días (las fotos de la galería no se tocan). */
 class PurgaWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
     override suspend fun doWork(): Result {
@@ -66,6 +82,7 @@ object Planificador {
     const val SYNC_AHORA = "sync-ahora"
     private const val SYNC_PERIODICA = "sync-periodica"
     private const val PURGA = "purga"
+    private const val SUBIR_FOTOS = "subir-fotos"
 
     private val conRed = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
 
@@ -89,6 +106,21 @@ object Planificador {
                 .setConstraints(conRed)
                 .setInputData(workDataOf(CLAVE_MANUAL to true))
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+                .build(),
+        )
+    }
+
+    /**
+     * Encola la subida de fotos pendientes. Un único trabajo las sube todas, una a una. Con
+     * [reintentarYa] (botón Sincronizar) se relanza al momento; si no, si ya hay uno en marcha
+     * se encadena otro detrás para que recoja también las fotos recién añadidas.
+     */
+    fun subirFotos(context: Context, reintentarYa: Boolean = false) {
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            SUBIR_FOTOS, if (reintentarYa) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.APPEND_OR_REPLACE,
+            OneTimeWorkRequestBuilder<SubirFotosWorker>()
+                .setConstraints(conRed)
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.MINUTES)
                 .build(),
         )
     }

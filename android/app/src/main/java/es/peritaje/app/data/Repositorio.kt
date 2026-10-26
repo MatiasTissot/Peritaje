@@ -63,15 +63,18 @@ class Repositorio(
 
     fun tokenActual(): String = token.token
 
-    private suspend fun api(): PcApi {
+    private suspend fun api(paraFotos: Boolean = false): PcApi {
         val url = config.obtener()?.urlPc.orEmpty()
         val t = token.token
         if (url.isBlank() || t.isBlank()) throw SinConfiguracion()
-        return FabricaApi.crear(url, t)
+        return FabricaApi.crear(url, t, paraFotos)
     }
 
-    suspend fun probarConexion(url: String, t: String): String =
-        FabricaApi.crear(normalizarUrl(url), t.trim()).salud().estado
+    /** Cliente hacia el PC para la subida de fotos (ver data.fotos.SubidaFotos). */
+    suspend fun apiFotos(): PcApi = api(paraFotos = true)
+
+    suspend fun probarConexion(url: String, t: String): RespuestaEstado =
+        FabricaApi.crear(normalizarUrl(url), t.trim()).salud()
 
     // --- sincronización (GET /citas-index + /citas/{id}) -----------------
 
@@ -260,7 +263,7 @@ class Repositorio(
 
     suspend fun borrarContacto(id: Long) = contactosDao.borrar(id)
 
-    /** "Finalizar visita": bloquea el checklist y deja el avance (y en el futuro las fotos) en cola. */
+    /** "Finalizar visita": bloquea el checklist y deja en cola el avance y la subida de las fotos a Drive. */
     suspend fun finalizarVisita(id: String): Boolean {
         val hecho = citas.finalizar(id, System.currentTimeMillis(), UUID.randomUUID().toString()) > 0
         if (hecho) citas.obtener(id)?.let { subidorFotos.encolar(it.idVisita, it.idEncargo) }
