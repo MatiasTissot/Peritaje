@@ -52,6 +52,9 @@ interface CitaDao {
     @Query("UPDATE foto SET idVisita = :nuevo WHERE idVisita = :viejo")
     suspend fun moverFotos(viejo: String, nuevo: String)
 
+    @Query("UPDATE contacto_visita SET idVisita = :nuevo WHERE idVisita = :viejo")
+    suspend fun moverContactos(viejo: String, nuevo: String)
+
     /**
      * Pasa una visita antigua (guardada con el id del encargo) a su id de visita de Notion,
      * con sus fotos y su checklist. Primero se crea la nueva, luego se mueven las fotos y al final se borra la vieja.
@@ -62,6 +65,7 @@ interface CitaDao {
         if (obtener(nuevo) != null) return
         insertar(cita.copy(idVisita = nuevo))
         moverFotos(viejo, nuevo)
+        moverContactos(viejo, nuevo)
         borrar(viejo)
     }
 
@@ -94,7 +98,11 @@ interface CitaDao {
             "AND COALESCE(TRIM(fechaOcurrencia), '') = '' AND COALESCE(TRIM(causa), '') = '' " +
             "AND COALESCE(TRIM(quienAtiende), '') = '' AND COALESCE(TRIM(testigos), '') = '' " +
             "AND COALESCE(TRIM(observacionesLibres), '') = '' AND hayCausante IS NULL " +
-            "AND NOT EXISTS (SELECT 1 FROM foto f WHERE f.idVisita = cita.idVisita AND f.quitada = 0)"
+            "AND COALESCE(TRIM(causanteNombre), '') = '' AND COALESCE(TRIM(causanteTelefono), '') = '' " +
+            "AND COALESCE(TRIM(causanteDni), '') = '' " +
+            "AND COALESCE(TRIM(causanteUbicacion), '') = '' AND COALESCE(TRIM(causanteAseguradora), '') = '' " +
+            "AND NOT EXISTS (SELECT 1 FROM foto f WHERE f.idVisita = cita.idVisita AND f.quitada = 0) " +
+            "AND NOT EXISTS (SELECT 1 FROM contacto_visita k WHERE k.idVisita = cita.idVisita)"
     )
     suspend fun borrarSiVacia(id: String): Int
 
@@ -102,6 +110,7 @@ interface CitaDao {
     @Query(
         "UPDATE cita SET estado = 'PENDIENTE', fechaOcurrencia = NULL, causa = NULL, hayCausante = NULL, " +
             "quienAtiende = NULL, testigos = NULL, observacionesLibres = NULL, fechaVisitaRealizada = NULL, " +
+            "causanteNombre = NULL, causanteTelefono = NULL, causanteDni = NULL, causanteUbicacion = NULL, causanteAseguradora = NULL, " +
             "fechaEnvio = NULL, idEnvio = NULL, ultimoError = NULL, anulada = 0, avisoNotion = NULL " +
             "WHERE idVisita = :id AND estado = 'ENVIADA'"
     )
@@ -109,12 +118,15 @@ interface CitaDao {
 
     @Query(
         "UPDATE cita SET fechaOcurrencia = :fechaOcurrencia, causa = :causa, hayCausante = :hayCausante, " +
-            "quienAtiende = :quienAtiende, testigos = :testigos, observacionesLibres = :observaciones " +
+            "quienAtiende = :quienAtiende, testigos = :testigos, observacionesLibres = :observaciones, " +
+            "causanteNombre = :causanteNombre, causanteTelefono = :causanteTelefono, causanteDni = :causanteDni, " +
+            "causanteUbicacion = :causanteUbicacion, causanteAseguradora = :causanteAseguradora " +
             "WHERE idVisita = :id AND estado = 'PENDIENTE'"
     )
     suspend fun guardarChecklist(
         id: String, fechaOcurrencia: String?, causa: String?, hayCausante: Boolean?,
         quienAtiende: String?, testigos: String?, observaciones: String?,
+        causanteNombre: String?, causanteTelefono: String?, causanteDni: String?, causanteUbicacion: String?, causanteAseguradora: String?,
     )
 
     @Query(
@@ -162,6 +174,38 @@ interface FotoDao {
 }
 
 @Dao
+interface ContactoDao {
+    @Query("SELECT * FROM contacto_visita WHERE idVisita = :id ORDER BY creado, id")
+    fun observarDe(id: String): Flow<List<ContactoVisita>>
+
+    @Query("SELECT * FROM contacto_visita WHERE idVisita = :id ORDER BY creado, id")
+    suspend fun deVisita(id: String): List<ContactoVisita>
+
+    @Insert
+    suspend fun insertar(contacto: ContactoVisita): Long
+
+    @Query("DELETE FROM contacto_visita WHERE idVisita = :id")
+    suspend fun borrarDeVisita(id: String)
+
+    // Solo mientras la visita está pendiente: una visita finalizada no se toca.
+    @Query(
+        "UPDATE contacto_visita SET rol = :rol, nombre = :nombre, telefono = :telefono, email = :email, " +
+            "dni = :dni, direccion = :direccion, notas = :notas " +
+            "WHERE id = :id AND EXISTS (SELECT 1 FROM cita c WHERE c.idVisita = contacto_visita.idVisita AND c.estado = 'PENDIENTE')"
+    )
+    suspend fun actualizar(
+        id: Long, rol: String, nombre: String, telefono: String?, email: String?, dni: String?,
+        direccion: String?, notas: String?,
+    )
+
+    @Query(
+        "DELETE FROM contacto_visita WHERE id = :id AND EXISTS " +
+            "(SELECT 1 FROM cita c WHERE c.idVisita = contacto_visita.idVisita AND c.estado = 'PENDIENTE')"
+    )
+    suspend fun borrar(id: Long)
+}
+
+@Dao
 interface ConfigDao {
     @Query("SELECT * FROM configuracion WHERE id = 1")
     fun observar(): Flow<Configuracion?>
@@ -180,12 +224,17 @@ class Conversores {
     @TypeConverter fun textoAEstadoSubida(s: String): EstadoSubida = EstadoSubida.valueOf(s)
 }
 
-@Database(entities = [Cita::class, FotoPendiente::class, Configuracion::class], version = 3, exportSchema = true)
+@Database(
+    entities = [Cita::class, FotoPendiente::class, Configuracion::class, ContactoVisita::class],
+    version = 4,
+    exportSchema = true,
+)
 @TypeConverters(Conversores::class)
 abstract class BaseDatos : RoomDatabase() {
     abstract fun citas(): CitaDao
     abstract fun fotos(): FotoDao
     abstract fun config(): ConfigDao
+    abstract fun contactos(): ContactoDao
 
     companion object {
         /** v0.1.2: visitas anuladas en Notion, avisos y fotos quitadas sin borrar. */
@@ -244,10 +293,28 @@ abstract class BaseDatos : RoomDatabase() {
             }
         }
 
+        /** v0.1.4: datos del causante y contactos añadidos en la visita. */
+        val MIGRACION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE cita ADD COLUMN causanteNombre TEXT")
+                db.execSQL("ALTER TABLE cita ADD COLUMN causanteTelefono TEXT")
+                db.execSQL("ALTER TABLE cita ADD COLUMN causanteDni TEXT")
+                db.execSQL("ALTER TABLE cita ADD COLUMN causanteUbicacion TEXT")
+                db.execSQL("ALTER TABLE cita ADD COLUMN causanteAseguradora TEXT")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `contacto_visita` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`idVisita` TEXT NOT NULL, `rol` TEXT NOT NULL, `nombre` TEXT NOT NULL, `telefono` TEXT, " +
+                        "`email` TEXT, `dni` TEXT, `direccion` TEXT, `notas` TEXT, `creado` INTEGER NOT NULL, FOREIGN KEY(`idVisita`) REFERENCES `cita`(`idVisita`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE )"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_contacto_visita_idVisita` ON `contacto_visita` (`idVisita`)")
+            }
+        }
+
         // Sin migraciones destructivas: si faltara una, la app debe fallar antes que borrar datos de visitas.
         fun crear(context: Context): BaseDatos =
             Room.databaseBuilder(context, BaseDatos::class.java, "peritaje.db")
-                .addMigrations(MIGRACION_1_2, MIGRACION_2_3)
+                .addMigrations(MIGRACION_1_2, MIGRACION_2_3, MIGRACION_3_4)
                 .build()
     }
 }

@@ -3,12 +3,14 @@ package es.peritaje.app.ui.detalle
 import android.app.Application
 import android.net.Uri
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import es.peritaje.app.PeritajeApp
 import es.peritaje.app.data.db.Cita
+import es.peritaje.app.data.db.ContactoVisita
 import es.peritaje.app.data.db.EstadoCita
 import es.peritaje.app.data.db.FotoPendiente
 import es.peritaje.app.data.Repositorio
@@ -23,6 +25,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.ConcurrentHashMap
 
 class DetalleViewModel(app: Application, val id: String) : AndroidViewModel(app) {
     private val contenedor = (app as PeritajeApp).contenedor
@@ -52,8 +55,13 @@ class DetalleViewModel(app: Application, val id: String) : AndroidViewModel(app)
     var mensaje by mutableStateOf<String?>(null)
         private set
 
+    /** Contactos añadidos en la visita. Se editan aquí y cada cambio se guarda al momento en Room. */
+    val contactos = mutableStateListOf<ContactoVisita>()
+    private val ultimosContactos = ConcurrentHashMap<Long, ContactoVisita>()
+
     init {
         viewModelScope.launch { borrador = repo.observarCita(id).filterNotNull().first() }
+        viewModelScope.launch { contactos.addAll(repo.contactosDe(id)) }
     }
 
     val editable: Boolean get() = cita.value?.estado == EstadoCita.PENDIENTE
@@ -67,9 +75,39 @@ class DetalleViewModel(app: Application, val id: String) : AndroidViewModel(app)
         contenedor.ambito.launch { guardarUltimo() }
     }
 
-    /** Escribe la última versión del borrador (si llegan varias a la vez, la última siempre gana). */
+    /** Escribe la última versión del borrador y de los contactos (si llegan varias a la vez, la última siempre gana). */
     private suspend fun guardarUltimo() = candado.withLock {
         ultimo?.let { repo.guardarChecklist(it) }
+        ultimosContactos.values.forEach { repo.guardarContacto(it) }
+    }
+
+    fun anadirContacto(rol: String) {
+        if (!editable) return
+        viewModelScope.launch {
+            val nuevoId = contenedor.ambito.async { repo.nuevoContacto(id, rol) }.await()
+            contactos.add(ContactoVisita(id = nuevoId, idVisita = id, rol = rol))
+        }
+    }
+
+    fun editarContacto(contactoId: Long, cambio: (ContactoVisita) -> ContactoVisita) {
+        if (!editable) return
+        val i = contactos.indexOfFirst { it.id == contactoId }
+        if (i < 0) return
+        val nuevo = cambio(contactos[i])
+        contactos[i] = nuevo
+        ultimosContactos[contactoId] = nuevo
+        contenedor.ambito.launch { guardarUltimo() }
+    }
+
+    fun borrarContacto(contactoId: Long) {
+        if (!editable) return
+        contactos.removeAll { it.id == contactoId }
+        contenedor.ambito.launch {
+            candado.withLock {
+                ultimosContactos.remove(contactoId)
+                repo.borrarContacto(contactoId)
+            }
+        }
     }
 
     override fun onCleared() {
@@ -96,7 +134,7 @@ class DetalleViewModel(app: Application, val id: String) : AndroidViewModel(app)
     }
 
     /** Texto del avance tal como se enviaría, para copiarlo antes de descartar una visita anulada. */
-    fun textoAvance(): String? = (borrador ?: cita.value)?.let { Repositorio.textoAvance(it, fotos.value.size) }
+    fun textoAvance(): String? = (borrador ?: cita.value)?.let { Repositorio.textoAvance(it, fotos.value.size, contactos.toList()) }
 
     /** Descarta una visita anulada en Notion. Las fotos siguen en la galería. */
     fun descartarAnulada(alTerminar: () -> Unit) {

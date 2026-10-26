@@ -77,6 +77,20 @@ data class Avance(
     @SerialName("texto_avance") val textoAvance: String,
     @SerialName("id_envio") val idEnvio: String? = null,
     @SerialName("id_visita") val idVisita: String? = null,
+    /** Contactos tomados en la visita (incluido el causante); el PC los crea en la base Contactos de Notion. */
+    val contactos: List<ContactoNuevo> = emptyList(),
+)
+
+/** Contacto para crear en Notion. El PC no duplica (nombre + teléfono), así que reintentar es seguro. */
+@Serializable
+data class ContactoNuevo(
+    val rol: String,
+    val nombre: String,
+    val telefono: String? = null,
+    val email: String? = null,
+    val dni: String? = null,
+    val direccion: String? = null,
+    val notas: String? = null,
 )
 
 @Serializable

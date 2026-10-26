@@ -88,6 +88,21 @@ class MigracionesTest {
 
                 // No se borra una visita con datos aunque se pida "borrar si vacía".
                 assertEquals(0, bd.citas().borrarSiVacia("visita1"))
+
+                // Un contacto añadido cuenta como dato: la visita ya no se borra sola.
+                val idContacto = bd.contactos().insertar(ContactoVisita(idVisita = "visita2", rol = "Inquilino"))
+                bd.contactos().actualizar(idContacto, "Inquilino", "Luis", "600000000", null, null, "2º B", null)
+                assertEquals(0, bd.citas().borrarSiVacia("visita2"))
+                assertEquals("Luis", bd.contactos().deVisita("visita2").single().nombre)
+
+                // Los datos del causante se guardan con el resto de la visita.
+                bd.citas().guardarChecklist(
+                    "visita1", null, "Fuga en baño", true, null, null, "Mancha en techo",
+                    "Pedro", "611111111", null, "3º A", "Mapfre 123",
+                )
+                assertEquals("Pedro", bd.citas().obtener("visita1")?.causanteNombre)
+
+                bd.contactos().borrar(idContacto)
                 assertEquals(1, bd.citas().borrarSiVacia("visita2"))
             }
         } finally {

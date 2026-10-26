@@ -36,7 +36,7 @@ import es.peritaje.app.ui.tema.Verde
 enum class Situacion(val texto: String, val color: Color, val icono: ImageVector?) {
     SIN_EMPEZAR("Por visitar", Gris, null),
     EN_CURSO("En curso", Azul, Icons.Filled.ChevronRight),
-    EN_COLA("Finalizada · enviando", Ambar, Icons.Filled.Upload),
+    EN_COLA("Enviando", Ambar, Icons.Filled.Upload),
     ERROR("Error al enviar", Rojo, Icons.Filled.PriorityHigh),
     ENVIADA("Enviada", Verde, Icons.Filled.Check),
 }

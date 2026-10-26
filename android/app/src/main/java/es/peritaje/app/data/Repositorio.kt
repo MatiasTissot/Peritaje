@@ -3,10 +3,12 @@ package es.peritaje.app.data
 import es.peritaje.app.data.db.BaseDatos
 import es.peritaje.app.data.db.Cita
 import es.peritaje.app.data.db.Configuracion
+import es.peritaje.app.data.db.ContactoVisita
 import es.peritaje.app.data.db.EstadoCita
 import es.peritaje.app.data.fotos.SubidorFotos
 import es.peritaje.app.data.red.Avance
 import es.peritaje.app.data.red.ContactoDto
+import es.peritaje.app.data.red.ContactoNuevo
 import es.peritaje.app.data.red.DetalleCita
 import es.peritaje.app.data.red.FabricaApi
 import es.peritaje.app.data.red.JsonApp
@@ -40,6 +42,7 @@ class Repositorio(
     private val citas = db.citas()
     private val fotos = db.fotos()
     private val config = db.config()
+    private val contactosDao = db.contactos()
 
     val resumenes = citas.observarResumenes()
     val configuracion = config.observar()
@@ -47,6 +50,8 @@ class Repositorio(
 
     fun observarCita(id: String) = citas.observar(id)
     fun observarFotos(id: String) = fotos.observarDe(id)
+    fun observarContactos(id: String) = contactosDao.observarDe(id)
+    suspend fun contactosDe(id: String) = contactosDao.deVisita(id)
 
     // --- configuración ---------------------------------------------------
 
@@ -173,7 +178,10 @@ class Repositorio(
                 // Solo datos antiguos (una visita por encargo): nueva visita otro día de un encargo ya enviado.
                 if (id == idEncargo && fechaIndice != null && !mismoDia(fecha, local.fechaHora) &&
                     fecha > local.fechaHora && citas.reabrir(id) > 0
-                ) actualizarDatos(local, detalle, fecha, null)
+                ) {
+                    contactosDao.borrarDeVisita(id)
+                    actualizarDatos(local, detalle, fecha, null)
+                }
             }
 
             fecha >= finVentana -> {
@@ -214,7 +222,8 @@ class Repositorio(
     }
 
     suspend fun tieneDatos(cita: Cita): Boolean =
-        !cita.checklistVacio() || fotos.contar(cita.idVisita) > 0 || capturaEnCurso(cita.idVisita)
+        !cita.checklistVacio() || fotos.contar(cita.idVisita) > 0 || capturaEnCurso(cita.idVisita) ||
+            contactosDao.deVisita(cita.idVisita).isNotEmpty()
 
     suspend fun quitarAviso(id: String) = citas.quitarAviso(id)
 
@@ -236,9 +245,20 @@ class Repositorio(
         citas.guardarChecklist(
             id = cita.idVisita, fechaOcurrencia = cita.fechaOcurrencia, causa = cita.causa,
             hayCausante = cita.hayCausante, quienAtiende = cita.quienAtiende, testigos = cita.testigos,
-            observaciones = cita.observacionesLibres,
+            observaciones = cita.observacionesLibres, causanteNombre = cita.causanteNombre,
+            causanteTelefono = cita.causanteTelefono, causanteDni = cita.causanteDni, causanteUbicacion = cita.causanteUbicacion,
+            causanteAseguradora = cita.causanteAseguradora,
         )
     }
+
+    /** Crea un contacto vacío con ese rol y devuelve su id. */
+    suspend fun nuevoContacto(idVisita: String, rol: String): Long =
+        contactosDao.insertar(ContactoVisita(idVisita = idVisita, rol = rol))
+
+    suspend fun guardarContacto(c: ContactoVisita) =
+        contactosDao.actualizar(c.id, c.rol, c.nombre, c.telefono, c.email, c.dni, c.direccion, c.notas)
+
+    suspend fun borrarContacto(id: Long) = contactosDao.borrar(id)
 
     /** "Finalizar visita": bloquea el checklist y deja el avance (y en el futuro las fotos) en cola. */
     suspend fun finalizarVisita(id: String): Boolean {
@@ -259,9 +279,10 @@ class Repositorio(
                 Avance(
                     idEncargo = cita.idEncargo,
                     fechaVisitaRealizada = aIso(cita.fechaVisitaRealizada ?: System.currentTimeMillis()),
-                    textoAvance = textoAvance(cita, fotos.contar(id)),
+                    textoAvance = textoAvance(cita, fotos.contar(id), contactosDao.deVisita(id)),
                     idEnvio = cita.idEnvio,
                     idVisita = cita.idVisita.takeIf { it != cita.idEncargo },
+                    contactos = contactosParaNotion(cita, contactosDao.deVisita(id)),
                 )
             )
             if (respuesta.estado == "ok") {
@@ -317,8 +338,37 @@ class Repositorio(
                 runCatching { JsonApp.decodeFromString(ListSerializer(ContactoDto.serializer()), it) }.getOrNull()
             } ?: emptyList()
 
-        /** El checklist se concatena en un único bloque de texto solo al enviar. */
-        fun textoAvance(cita: Cita, numFotos: Int): String {
+        private fun limpio(s: String?) = s?.trim()?.takeIf { it.isNotEmpty() }
+
+        /** Causante (si lo hay) y contactos añadidos con algún dato, tal como se crean en Notion. */
+        fun contactosParaNotion(cita: Cita, contactos: List<ContactoVisita>): List<ContactoNuevo> = buildList {
+            val causante = listOf(cita.causanteNombre, cita.causanteTelefono, cita.causanteDni, cita.causanteUbicacion)
+            if (cita.hayCausante == true && causante.any { limpio(it) != null }) {
+                add(
+                    ContactoNuevo(
+                        rol = "Causante",
+                        // El nombre es obligatorio en Notion: si no se tomó, se deja indicado.
+                        nombre = limpio(cita.causanteNombre) ?: "Causante (sin nombre)",
+                        telefono = limpio(cita.causanteTelefono),
+                        dni = limpio(cita.causanteDni),
+                        direccion = limpio(cita.causanteUbicacion),
+                        notas = limpio(cita.causanteAseguradora)?.let { "Aseguradora/póliza: $it" },
+                    )
+                )
+            }
+            contactos.filterNot { it.vacio() }.forEach {
+                add(
+                    ContactoNuevo(
+                        rol = it.rol, nombre = limpio(it.nombre) ?: "${it.rol} (sin nombre)",
+                        telefono = limpio(it.telefono), email = limpio(it.email), dni = limpio(it.dni),
+                        direccion = limpio(it.direccion), notas = limpio(it.notas),
+                    )
+                )
+            }
+        }
+
+        /** Los datos de la visita se concatenan en un único bloque de texto solo al enviar. */
+        fun textoAvance(cita: Cita, numFotos: Int, contactos: List<ContactoVisita> = emptyList()): String {
             fun v(s: String?) = s?.trim()?.takeIf { it.isNotEmpty() } ?: "—"
             val causante = when (cita.hayCausante) {
                 true -> "Sí"
@@ -331,7 +381,26 @@ class Repositorio(
                 appendLine("Fecha de ocurrencia: ${v(cita.fechaOcurrencia)}")
                 appendLine("Causa: ${v(cita.causa)}")
                 appendLine("Hay causante: $causante")
-                appendLine("Testigos: ${v(cita.testigos)}")
+                if (cita.hayCausante == true) {
+                    appendLine("Datos del causante:")
+                    appendLine("  Nombre: ${v(cita.causanteNombre)}")
+                    appendLine("  Teléfono: ${v(cita.causanteTelefono)}")
+                    limpio(cita.causanteDni)?.let { appendLine("  DNI: $it") }
+                    appendLine("  Ubicación: ${v(cita.causanteUbicacion)}")
+                    appendLine("  Aseguradora/póliza: ${v(cita.causanteAseguradora)}")
+                }
+                limpio(cita.testigos)?.let { appendLine("Testigos: $it") }
+                val conDatos = contactos.filterNot { it.vacio() }
+                if (conDatos.isNotEmpty()) {
+                    appendLine("Otros contactos:")
+                    conDatos.forEach { k ->
+                        val datos = listOfNotNull(
+                            limpio(k.nombre), limpio(k.telefono), limpio(k.email), limpio(k.dni)?.let { "DNI $it" },
+                            limpio(k.direccion), limpio(k.notas),
+                        )
+                        appendLine("  ${k.rol}: " + datos.joinToString(" · "))
+                    }
+                }
                 appendLine("Fotos tomadas: $numFotos")
                 appendLine("Observaciones:")
                 append(v(cita.observacionesLibres))

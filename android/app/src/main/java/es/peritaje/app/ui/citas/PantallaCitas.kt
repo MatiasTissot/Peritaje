@@ -140,19 +140,18 @@ fun PantallaCitas(vm: CitasViewModel, abrirCita: (String) -> Unit, abrirAjustes:
                     }
                 }
                 if (sync.nube == Nube.SIN_CONFIGURAR) {
-                    item { Aviso("Configura la dirección del PC y el token para traer las citas.", "Configurar", abrirAjustes) }
+                    item { Aviso("Falta conectar con el PC.", "Configurar", abrirAjustes) }
                 } else if (sync.antigua) {
                     item {
                         val cuando = sync.ultima?.let { Repositorio.fechaHoraLegible(it) } ?: "nunca"
-                        Aviso("Última sincronización: $cuando. Sincroniza antes de salir para tener las citas sin cobertura.", "Sincronizar") { vm.sincronizar() }
+                        Aviso("Sin sincronizar desde: $cuando", "Sincronizar") { vm.sincronizar() }
                     }
                 }
                 if (visibles.isEmpty()) {
                     item {
                         Text(
-                            if (filtro == Filtro.ENVIADAS) "No hay visitas enviadas en los últimos 7 días."
-                            else "No hay visitas. En el móvil se cargan las de hoy, las de mañana si sincronizas " +
-                                "a partir de las 17:00, y las pendientes de cerrar.",
+                            if (filtro == Filtro.ENVIADAS) "Sin visitas enviadas (7 días)."
+                            else "No hay visitas para hoy.",
                             style = MaterialTheme.typography.bodyLarge,
                             modifier = Modifier.padding(16.dp),
                         )
@@ -229,17 +228,16 @@ private fun TarjetaCita(r: CitaResumen, onClick: () -> Unit) {
                     Text(c.idEncargo, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Text(c.direccion, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis)
-                if (c.asegurado.isNotBlank()) Text(c.asegurado, style = MaterialTheme.typography.bodyMedium)
-                if (c.anulada) {
-                    Text("Anulada en Notion · tiene datos sin enviar", color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                } else if (c.avisoNotion != null) {
-                    Text("Cambiada en Notion", color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                }
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(s.texto, color = s.color, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    when {
+                        c.anulada -> Text("Anulada en Notion", color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        c.avisoNotion != null -> Text("Cambiada en Notion", color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        else -> Text(s.texto, color = s.color, style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold)
+                    }
                     if (r.numFotos > 0) {
                         Spacer(Modifier.width(12.dp))
                         Icon(Icons.Filled.PhotoCamera, contentDescription = "Fotos", modifier = Modifier.size(18.dp),
