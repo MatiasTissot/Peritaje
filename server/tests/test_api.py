@@ -164,6 +164,8 @@ def test_avance_crea_desplegable_si_no_existe(entorno):
     assert r.json() == {"estado": "ok"}
     destino, bloques, _ = fake.anadidos[0]
     assert destino == "p1" and bloques[0]["heading_2"]["is_toggleable"]
+    # Formato que exige Notion: los hijos dentro de heading_2, nunca al nivel del bloque.
+    assert "children" not in bloques[0] and bloques[0]["heading_2"]["children"]
 
 
 def test_avance_encargo_inexistente(entorno):

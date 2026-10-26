@@ -332,7 +332,8 @@ class Servicio:
 
     @staticmethod
     def _parrafo(texto: str, negrita: bool = False) -> dict:
-        trozos = [texto[i:i + 1900] for i in range(0, len(texto), 1900)] or [""]
+        # Una línea vacía se manda sin texto (rich_text vacío), que Notion siempre acepta.
+        trozos = [texto[i:i + 1900] for i in range(0, len(texto), 1900)]
         return {"object": "block", "type": "paragraph", "paragraph": {"rich_text": [
             {"type": "text", "text": {"content": t}, "annotations": {"bold": negrita}} for t in trozos
         ]}}
@@ -365,9 +366,10 @@ class Servicio:
                 # No existe aún: se crea un desplegable "AVANCE APP" al final de la página.
                 self.notion.anadir_hijos(encargo["id"], [{
                     "object": "block", "type": "heading_2",
+                    # Los hijos van dentro de "heading_2"; fuera de él Notion rechaza el bloque (400).
                     "heading_2": {"is_toggleable": True, "rich_text": [
-                        {"type": "text", "text": {"content": self.cfg.titulo_avance}}]},
-                    "children": bloques[:99],
+                        {"type": "text", "text": {"content": self.cfg.titulo_avance}}],
+                        "children": bloques[:99]},
                 }])
                 if len(bloques) > 99:
                     destino = self._buscar_destino(encargo["id"])
