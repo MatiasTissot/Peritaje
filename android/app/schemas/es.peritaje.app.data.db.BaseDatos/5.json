@@ -1,0 +1,483 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 5,
+    "identityHash": "2b35a7f17c5378638d8acef009ad861c",
+    "entities": [
+      {
+        "tableName": "cita",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`idVisita` TEXT NOT NULL, `idEncargo` TEXT NOT NULL, `fechaHora` INTEGER NOT NULL, `direccion` TEXT NOT NULL, `asegurado` TEXT NOT NULL, `telefonoContacto` TEXT, `tipoSiniestro` TEXT, `notasGabinete` TEXT, `titulo` TEXT, `expCompania` TEXT, `urlMaps` TEXT, `notasVisita` TEXT, `contactosJson` TEXT, `fechaOcurrencia` TEXT, `causa` TEXT, `hayCausante` INTEGER, `quienAtiende` TEXT, `testigos` TEXT, `observacionesLibres` TEXT, `causanteNombre` TEXT, `causanteTelefono` TEXT, `causanteDni` TEXT, `causanteUbicacion` TEXT, `causanteAseguradora` TEXT, `estado` TEXT NOT NULL, `fechaVisitaRealizada` INTEGER, `fechaEnvio` INTEGER, `idEnvio` TEXT, `ultimoError` TEXT, `anulada` INTEGER NOT NULL DEFAULT 0, `avisoNotion` TEXT, PRIMARY KEY(`idVisita`))",
+        "fields": [
+          {
+            "fieldPath": "idVisita",
+            "columnName": "idVisita",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idEncargo",
+            "columnName": "idEncargo",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fechaHora",
+            "columnName": "fechaHora",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "direccion",
+            "columnName": "direccion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "asegurado",
+            "columnName": "asegurado",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "telefonoContacto",
+            "columnName": "telefonoContacto",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "tipoSiniestro",
+            "columnName": "tipoSiniestro",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "notasGabinete",
+            "columnName": "notasGabinete",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "titulo",
+            "columnName": "titulo",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "expCompania",
+            "columnName": "expCompania",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "urlMaps",
+            "columnName": "urlMaps",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "notasVisita",
+            "columnName": "notasVisita",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "contactosJson",
+            "columnName": "contactosJson",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "fechaOcurrencia",
+            "columnName": "fechaOcurrencia",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "causa",
+            "columnName": "causa",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "hayCausante",
+            "columnName": "hayCausante",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "quienAtiende",
+            "columnName": "quienAtiende",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "testigos",
+            "columnName": "testigos",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "observacionesLibres",
+            "columnName": "observacionesLibres",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "causanteNombre",
+            "columnName": "causanteNombre",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "causanteTelefono",
+            "columnName": "causanteTelefono",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "causanteDni",
+            "columnName": "causanteDni",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "causanteUbicacion",
+            "columnName": "causanteUbicacion",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "causanteAseguradora",
+            "columnName": "causanteAseguradora",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "estado",
+            "columnName": "estado",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fechaVisitaRealizada",
+            "columnName": "fechaVisitaRealizada",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "fechaEnvio",
+            "columnName": "fechaEnvio",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "idEnvio",
+            "columnName": "idEnvio",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "ultimoError",
+            "columnName": "ultimoError",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "anulada",
+            "columnName": "anulada",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "avisoNotion",
+            "columnName": "avisoNotion",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "idVisita"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_cita_idEncargo",
+            "unique": false,
+            "columnNames": [
+              "idEncargo"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cita_idEncargo` ON `${TABLE_NAME}` (`idEncargo`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "foto",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `idVisita` TEXT NOT NULL, `idEncargo` TEXT NOT NULL, `uriMediastore` TEXT NOT NULL, `nombreArchivo` TEXT NOT NULL, `numero` INTEGER NOT NULL, `estadoSubida` TEXT NOT NULL, `intentos` INTEGER NOT NULL, `fechaCaptura` INTEGER NOT NULL, `quitada` INTEGER NOT NULL DEFAULT 0, `idDrive` TEXT, `fechaSubida` INTEGER, `errorSubida` TEXT, FOREIGN KEY(`idVisita`) REFERENCES `cita`(`idVisita`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idVisita",
+            "columnName": "idVisita",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idEncargo",
+            "columnName": "idEncargo",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uriMediastore",
+            "columnName": "uriMediastore",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nombreArchivo",
+            "columnName": "nombreArchivo",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "numero",
+            "columnName": "numero",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "estadoSubida",
+            "columnName": "estadoSubida",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "intentos",
+            "columnName": "intentos",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fechaCaptura",
+            "columnName": "fechaCaptura",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "quitada",
+            "columnName": "quitada",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "idDrive",
+            "columnName": "idDrive",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "fechaSubida",
+            "columnName": "fechaSubida",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "errorSubida",
+            "columnName": "errorSubida",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_foto_idVisita",
+            "unique": false,
+            "columnNames": [
+              "idVisita"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_foto_idVisita` ON `${TABLE_NAME}` (`idVisita`)"
+          },
+          {
+            "name": "index_foto_idEncargo",
+            "unique": false,
+            "columnNames": [
+              "idEncargo"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_foto_idEncargo` ON `${TABLE_NAME}` (`idEncargo`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "cita",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idVisita"
+            ],
+            "referencedColumns": [
+              "idVisita"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "configuracion",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `urlPc` TEXT NOT NULL, `ultimaSincronizacion` INTEGER, `ultimoErrorSync` TEXT, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "urlPc",
+            "columnName": "urlPc",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ultimaSincronizacion",
+            "columnName": "ultimaSincronizacion",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "ultimoErrorSync",
+            "columnName": "ultimoErrorSync",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "contacto_visita",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `idVisita` TEXT NOT NULL, `rol` TEXT NOT NULL, `nombre` TEXT NOT NULL, `telefono` TEXT, `email` TEXT, `dni` TEXT, `direccion` TEXT, `notas` TEXT, `creado` INTEGER NOT NULL, FOREIGN KEY(`idVisita`) REFERENCES `cita`(`idVisita`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idVisita",
+            "columnName": "idVisita",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rol",
+            "columnName": "rol",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nombre",
+            "columnName": "nombre",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "telefono",
+            "columnName": "telefono",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "email",
+            "columnName": "email",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dni",
+            "columnName": "dni",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "direccion",
+            "columnName": "direccion",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "notas",
+            "columnName": "notas",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "creado",
+            "columnName": "creado",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_contacto_visita_idVisita",
+            "unique": false,
+            "columnNames": [
+              "idVisita"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_contacto_visita_idVisita` ON `${TABLE_NAME}` (`idVisita`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "cita",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "idVisita"
+            ],
+            "referencedColumns": [
+              "idVisita"
+            ]
+          }
+        ]
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '2b35a7f17c5378638d8acef009ad861c')"
+    ]
+  }
+}
