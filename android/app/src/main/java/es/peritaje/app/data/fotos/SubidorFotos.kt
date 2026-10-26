@@ -18,7 +18,9 @@ import okhttp3.RequestBody
 import okio.BufferedSink
 import okio.source
 import retrofit2.HttpException
+import java.io.File
 import java.io.FileNotFoundException
+import java.io.InputStream
 import java.security.MessageDigest
 import java.time.Instant
 import java.time.ZoneId
@@ -123,8 +125,7 @@ class SubidaFotos(
     private fun huella(uri: Uri): Pair<String, Long> {
         val md = MessageDigest.getInstance("SHA-256")
         var total = 0L
-        val entrada = context.contentResolver.openInputStream(uri) ?: throw FileNotFoundException(uri.toString())
-        entrada.use {
+        abrir(context, uri).use {
             val buf = ByteArray(64 * 1024)
             while (true) {
                 val n = it.read(buf)
@@ -142,12 +143,16 @@ class SubidaFotos(
         override fun contentType(): MediaType = "image/jpeg".toMediaType()
         override fun contentLength(): Long = tamano
         override fun writeTo(sink: BufferedSink) {
-            val entrada = context.contentResolver.openInputStream(uri) ?: throw FileNotFoundException(uri.toString())
-            entrada.source().use { sink.writeAll(it) }
+            abrir(context, uri).source().use { sink.writeAll(it) }
         }
     }
 
     private companion object {
+        /** Las fotos de Android 8-9 se guardaron como file://: se leen directamente del archivo. */
+        fun abrir(context: Context, uri: Uri): InputStream =
+            if (uri.scheme == "file") File(requireNotNull(uri.path)).inputStream()
+            else context.contentResolver.openInputStream(uri) ?: throw FileNotFoundException(uri.toString())
+
         /** Marca interna de los fallos que no dependen de la foto (PC apagado, Drive sin configurar...). */
         const val SIN_PC = "[pc]"
         val DIA: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")

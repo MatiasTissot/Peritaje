@@ -332,7 +332,7 @@ abstract class BaseDatos : RoomDatabase() {
             }
         }
 
-        /** v0.1.6: subida de fotos a Google Drive (vía el PC). */
+        /** v0.1.7: subida de fotos a Google Drive (vía el PC). */
         val MIGRACION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE foto ADD COLUMN idDrive TEXT")
