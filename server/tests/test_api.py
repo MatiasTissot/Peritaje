@@ -400,3 +400,14 @@ def test_avance_encuentra_bloque_avance_apk(entorno):
     cliente.post("/avance", headers=H, json={"id_encargo": "MA26043441",
                  "fecha_visita_realizada": "2026-09-28T10:15:00", "texto_avance": "x"})
     assert fake.anadidos[0][0] == "b-apk"
+
+
+def test_contactos_de_todos_los_roles_y_titulo_libre(entorno):
+    cliente, fake, _ = entorno
+    presidente = contacto("p1", "Asegurado", "Francisco, plaza 17", "697862819")
+    presidente["properties"]["Contacto"]["title"] = rt("PRESIDENTE ")
+    fake.contactos += [presidente, contacto("p1", "Inquilino", "Ana", "622222222")]
+    contactos = cliente.get("/citas/MA26043441", headers=H).json()["contactos"]
+    assert [(c["rol"], c["nombre"]) for c in contactos] == [
+        ("Comunidad", "Presidente"), ("Asegurado", "Juan Pérez"),
+        ("Asegurado", "PRESIDENTE (Francisco, plaza 17)"), ("Inquilino", "Ana")]

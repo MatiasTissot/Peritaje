@@ -251,9 +251,16 @@ class Servicio:
         relacion = {"property": "Encargo", "relation": {"contains": page_id}}
         contactos = []
         for c in self.notion.consultar(self.cfg.db_contactos, relacion):
+            rol = prop(c, "Rol") or "Otro"
+            nombre = (prop(c, "Nombre") or "").strip()
+            titulo = (prop(c, "Contacto") or "").strip()
+            # Si el título dice algo más que "Rol - Nombre" (p. ej. "PRESIDENTE"), se
+            # muestra delante del nombre: si no, en el móvil no se sabría quién es.
+            if titulo and _clave(titulo) not in (_clave(f"{rol} - {nombre}"), _clave(nombre)):
+                nombre = f"{titulo} ({nombre})" if nombre else titulo
             contactos.append({
-                "rol": prop(c, "Rol") or "Otro",
-                "nombre": prop(c, "Nombre") or prop(c, "Contacto") or "",
+                "rol": rol,
+                "nombre": nombre,
                 "telefono": _vacio_a_none(prop(c, "Telefono")),
                 "notas": _vacio_a_none(prop(c, "Notas_Contacto")),
             })
