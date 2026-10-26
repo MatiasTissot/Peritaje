@@ -406,8 +406,11 @@ def test_contactos_de_todos_los_roles_y_titulo_libre(entorno):
     cliente, fake, _ = entorno
     presidente = contacto("p1", "Asegurado", "Francisco, plaza 17", "697862819")
     presidente["properties"]["Contacto"]["title"] = rt("PRESIDENTE ")
-    fake.contactos += [presidente, contacto("p1", "Inquilino", "Ana", "622222222")]
-    contactos = cliente.get("/citas/MA26043441", headers=H).json()["contactos"]
+    # Aunque Notion devuelva primero al presidente, el asegurado de la ficha es el otro.
+    fake.contactos[:] = [presidente] + fake.contactos + [contacto("p1", "Inquilino", "Ana", "622222222")]
+    ficha = cliente.get("/citas/MA26043441", headers=H).json()
+    assert ficha["asegurado"] == "Juan Pérez"
+    contactos = ficha["contactos"]
     assert [(c["rol"], c["nombre"]) for c in contactos] == [
-        ("Comunidad", "Presidente"), ("Asegurado", "Juan Pérez"),
-        ("Asegurado", "PRESIDENTE (Francisco, plaza 17)"), ("Inquilino", "Ana")]
+        ("Asegurado", "PRESIDENTE (Francisco, plaza 17)"), ("Comunidad", "Presidente"),
+        ("Asegurado", "Juan Pérez"), ("Inquilino", "Ana")]

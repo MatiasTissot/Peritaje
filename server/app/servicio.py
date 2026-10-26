@@ -249,7 +249,7 @@ class Servicio:
     def _ficha(self, encargo: dict, elegida) -> dict:
         page_id = encargo["id"]
         relacion = {"property": "Encargo", "relation": {"contains": page_id}}
-        contactos = []
+        contactos, con_titulo = [], set()
         for c in self.notion.consultar(self.cfg.db_contactos, relacion):
             rol = prop(c, "Rol") or "Otro"
             nombre = (prop(c, "Nombre") or "").strip()
@@ -258,13 +258,20 @@ class Servicio:
             # muestra delante del nombre: si no, en el móvil no se sabría quién es.
             if titulo and _clave(titulo) not in (_clave(f"{rol} - {nombre}"), _clave(nombre)):
                 nombre = f"{titulo} ({nombre})" if nombre else titulo
+                con_titulo.add(len(contactos))
             contactos.append({
                 "rol": rol,
                 "nombre": nombre,
                 "telefono": _vacio_a_none(prop(c, "Telefono")),
                 "notas": _vacio_a_none(prop(c, "Notas_Contacto")),
+                "email": _vacio_a_none(prop(c, "Email")),
+                "direccion": _vacio_a_none(prop(c, "Direccion")),
             })
-        asegurado = next((c for c in contactos if c["rol"] == "Asegurado"), contactos[0] if contactos else None)
+        # El asegurado de la ficha: mejor uno con título normal ("Asegurado - Nombre") que
+        # uno con título propio como "PRESIDENTE", aunque los dos tengan rol Asegurado.
+        asegurados = [i for i, c in enumerate(contactos) if c["rol"] == "Asegurado"]
+        asegurados.sort(key=lambda i: i in con_titulo)
+        asegurado = contactos[asegurados[0]] if asegurados else (contactos[0] if contactos else None)
 
         calle = prop(encargo, "Direccion Calle") or ""
         piso = prop(encargo, "Piso, Puerta") or ""
