@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import hmac
 import logging
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
@@ -23,6 +23,16 @@ from .servicio import EncargoNoEncontrado, Servicio
 log = logging.getLogger("peritaje")
 
 
+class ContactoIn(BaseModel):
+    rol: str = "Otro"
+    nombre: str
+    telefono: Optional[str] = None
+    email: Optional[str] = None
+    dni: Optional[str] = None
+    direccion: Optional[str] = None
+    notas: Optional[str] = None
+
+
 class AvanceIn(BaseModel):
     id_encargo: str
     fecha_visita_realizada: str
@@ -31,6 +41,9 @@ class AvanceIn(BaseModel):
     id_envio: Optional[str] = None
     # Opcional: visita concreta (un encargo puede tener varias). None en datos antiguos.
     id_visita: Optional[str] = None
+    # Opcional: contactos nuevos tomados en la visita (inquilino, causante...). Se crean
+    # en la base Contactos de Notion enlazados al encargo; los repetidos no se duplican.
+    contactos: List[ContactoIn] = []
 
 
 def crear_app(servicio: Optional[Servicio] = None, app_token: Optional[str] = None) -> FastAPI:
@@ -82,7 +95,8 @@ def crear_app(servicio: Optional[Servicio] = None, app_token: Optional[str] = No
     def avance(datos: AvanceIn):
         try:
             servicio.escribir_avance(datos.id_encargo, datos.fecha_visita_realizada,
-                                     datos.texto_avance, datos.id_envio, datos.id_visita)
+                                     datos.texto_avance, datos.id_envio, datos.id_visita,
+                                     [c.model_dump() if hasattr(c, "model_dump") else c.dict() for c in datos.contactos])
             return {"estado": "ok"}
         except EncargoNoEncontrado as e:
             return {"estado": "error", "detalle": str(e)}
