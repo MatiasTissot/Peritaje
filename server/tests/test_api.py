@@ -91,11 +91,21 @@ class FakeNotion:
 
     def anadir_hijos(self, bid, bloques, after=None):
         self.anadidos.append((bid, bloques, after))
-        for b in bloques:
-            for t in b.get(b["type"], {}).get("rich_text", []):
-                t.setdefault("plain_text", t["text"]["content"])
-        self.bloques.setdefault(bid, []).extend(bloques)
+        self._guardar(bid, bloques)
         return {"results": []}
+
+    def _guardar(self, bid, bloques):
+        # Como Notion: cada bloque recibe id y sus hijos (dentro del tipo) quedan colgando de él.
+        for b in bloques:
+            datos = b.get(b["type"], {})
+            assert "children" not in b, "los hijos van dentro del tipo de bloque"
+            b.setdefault("id", f"n{sum(len(v) for v in self.bloques.values())}")
+            for t in datos.get("rich_text", []):
+                t.setdefault("plain_text", t["text"]["content"])
+            hijos = datos.get("children") or []
+            b["has_children"] = bool(hijos)
+            self.bloques.setdefault(bid, []).append(b)
+            self._guardar(b["id"], hijos)
 
 
 @pytest.fixture
@@ -167,16 +177,56 @@ def test_avance_va_al_bloque_y_no_se_duplica(entorno):
     assert "Causa: rotura" in textos and "28/09/2026 10:15" in textos[0]
 
 
-def test_avance_crea_desplegable_si_no_existe(entorno):
+def test_avance_crea_pestana_si_la_pagina_no_tiene(entorno):
     cliente, fake, _ = entorno
     fake.bloques["p1"] = []
     r = cliente.post("/avance", headers=H, json={"id_encargo": "MA26043441",
                      "fecha_visita_realizada": "2026-09-28T10:15:00", "texto_avance": "x"})
     assert r.json() == {"estado": "ok"}
-    destino, bloques, _ = fake.anadidos[0]
-    assert destino == "p1" and bloques[0]["heading_2"]["is_toggleable"]
-    # Formato que exige Notion: los hijos dentro de heading_2, nunca al nivel del bloque.
-    assert "children" not in bloques[0] and bloques[0]["heading_2"]["children"]
+    (pagina, creado, _), (padre, bloques, _) = fake.anadidos
+    assert pagina == "p1" and creado[0]["type"] == "tab"
+    pestana = creado[0]["tab"]["children"][0]
+    assert pestana["paragraph"]["rich_text"][0]["text"]["content"] == "AVANCE APP"
+    assert padre == pestana["id"] and "x" in [b["paragraph"]["rich_text"][0]["text"]["content"]
+                                              for b in bloques if b["type"] == "paragraph"]
+
+
+def pestanas(*nombres, con_avance_antiguo=False):
+    bloques = {"p1": [{"id": "b-tabs", "type": "tab", "has_children": True, "tab": {}}],
+               "b-tabs": [{"id": f"t-{n}", "type": "paragraph", "has_children": True,
+                           "paragraph": {"rich_text": rt(n)}} for n in nombres]}
+    if con_avance_antiguo:
+        bloques["p1"].append({"id": "b-av", "type": "heading_2", "has_children": True,
+                              "heading_2": {"rich_text": rt("AVANCE APP"), "is_toggleable": True}})
+    return bloques
+
+
+def test_avance_va_dentro_de_la_pestana_avance_app(entorno, tmp_path):
+    cliente, fake, _ = entorno
+    # Gana a un desplegable antiguo "AVANCE APP" de la misma página; el título puede llevar espacios.
+    fake.bloques.update(pestanas("AVANCE", "INFORME", "AVANCE APP ", con_avance_antiguo=True))
+    cuerpo = {"id_encargo": "MA26043441", "fecha_visita_realizada": "2026-09-28T10:15:00",
+              "texto_avance": "x", "id_envio": "e1"}
+    assert cliente.post("/avance", headers=H, json=cuerpo).json() == {"estado": "ok"}
+    assert [(a[0], a[2]) for a in fake.anadidos] == [("t-AVANCE APP ", None)]
+    # Perdido el registro local, la referencia dentro de la pestaña evita duplicarlo.
+    (tmp_path / "envios.json").unlink()
+    assert cliente.post("/avance", headers=H, json=cuerpo).json() == {"estado": "ok"}
+    assert len(fake.anadidos) == 1
+
+
+def test_avance_anade_pestana_si_falta(entorno):
+    cliente, fake, _ = entorno
+    fake.bloques.update(pestanas("AVANCE", "INFORME", con_avance_antiguo=True))
+    r = cliente.post("/avance", headers=H, json={"id_encargo": "MA26043441",
+                     "fecha_visita_realizada": "2026-09-28T10:15:00", "texto_avance": "x"})
+    assert r.json() == {"estado": "ok"}
+    (contenedor, creado, _), (padre, _, _) = fake.anadidos
+    # Se añade como una pestaña más del bloque existente, no como bloque suelto.
+    assert contenedor == "b-tabs" and creado[0]["type"] == "paragraph"
+    assert padre == creado[0]["id"]
+    assert [p["paragraph"]["rich_text"][0]["plain_text"] for p in fake.bloques["b-tabs"]] == \
+        ["AVANCE", "INFORME", "AVANCE APP"]
 
 
 def test_avance_encargo_inexistente(entorno):
