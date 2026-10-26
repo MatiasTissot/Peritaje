@@ -50,9 +50,13 @@ jobs:
             git commit -m "Esquema de la base de datos del móvil (generado por la compilación)"
             git push || echo "::warning title=Esquema::No se pudo guardar el esquema en el repositorio"
           fi
+      - id: version
+        run: |
+          version=$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' app/build.gradle.kts)
+          echo "nombre=$version" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
-          name: peritaje-debug-apk
+          name: peritaje-${{ steps.version.outputs.nombre }}
           path: android/app/build/outputs/apk/debug/*.apk
       # Publica el APK como versión "ultima" del repositorio (privada), para descargarlo directo desde el móvil.
       - name: Publicar versión
