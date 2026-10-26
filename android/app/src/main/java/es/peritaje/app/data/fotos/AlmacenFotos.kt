@@ -25,9 +25,10 @@ import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 
 /**
- * Guarda las fotos como fotos normales de la galería, una carpeta por visita:
- * Pictures/PeritajeApp/<expediente>/Visita_AAAA-MM-DD/, con la fecha y hora de la foto como
- * nombre (AAAA-MM-DD_HH-MM-SS.jpg). En Drive se replicará como
+ * Guarda las fotos como fotos normales de la galería, agrupadas por mes de la visita y una
+ * carpeta por visita: Pictures/PeritajeApp/AAAA-MM/<expediente>/Visita_AAAA-MM-DD/, con la fecha
+ * y hora de la foto como nombre (AAAA-MM-DD_HH-MM-SS.jpg). Así se puede copiar un mes entero al
+ * PC como copia de seguridad. Las fotos de versiones anteriores se quedan donde estaban. En Drive se replicará como
  * Expedientes_2026/<expediente>/Fotografias/Visita_AAAA-MM-DD/.
  *
  * Regla principal: **una foto nunca se pierde**.
@@ -75,11 +76,11 @@ class AlmacenFotos(
     /** Capturas en curso, guardadas en disco (no en memoria) para sobrevivir a que Android cierre la app. */
     private val capturas = context.getSharedPreferences("capturas_en_curso", Context.MODE_PRIVATE)
 
-    /** Carpeta de la visita: <expediente>/Visita_<día de la visita>. */
+    /** Carpeta de la visita: <mes de la visita>/<expediente>/Visita_<día de la visita>. */
     private fun carpeta(cita: Cita): String {
         val expediente = cita.idEncargo.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "sin_expediente" }
-        val dia = DIA.format(Instant.ofEpochMilli(cita.fechaHora).atZone(ZoneId.systemDefault()))
-        return "$expediente/Visita_$dia"
+        val fecha = Instant.ofEpochMilli(cita.fechaHora).atZone(ZoneId.systemDefault())
+        return "${MES.format(fecha)}/$expediente/Visita_${DIA.format(fecha)}"
     }
 
     private var ultimaBase = ""
@@ -256,5 +257,6 @@ class AlmacenFotos(
         const val CARPETA = "PeritajeApp"
         private val NOMBRE = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss")
         private val DIA = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+        private val MES = DateTimeFormatter.ofPattern("yyyy-MM")
     }
 }
