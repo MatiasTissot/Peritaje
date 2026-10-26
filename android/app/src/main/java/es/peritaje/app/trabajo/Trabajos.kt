@@ -22,9 +22,13 @@ private val Context.repo get() = (applicationContext as PeritajeApp).contenedor.
 /** Trae el índice de citas del PC y las que falten. */
 class SincronizarWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
     override suspend fun doWork(): Result = try {
+        // Primero los avances pendientes, aunque luego falle la sincronización. En la manual se
+        // relanzan ya (sin esperar a la espera entre reintentos); el PC no duplica gracias a id_envio.
+        val manual = inputData.getBoolean(CLAVE_MANUAL, false)
+        applicationContext.repo.idsVisitadas().forEach {
+            Planificador.enviarAvance(applicationContext, it, reintentarYa = manual)
+        }
         applicationContext.repo.sincronizar()
-        // Por si alguna visita finalizada se quedó sin encolar (p. ej. tras reinstalar).
-        applicationContext.repo.idsVisitadas().forEach { Planificador.enviarAvance(applicationContext, it) }
         Result.success()
     } catch (e: SinConfiguracion) {
         Result.failure()
@@ -32,6 +36,8 @@ class SincronizarWorker(ctx: Context, params: WorkerParameters) : CoroutineWorke
         if (runAttemptCount < 3) Result.retry() else Result.failure()
     }
 }
+
+private const val CLAVE_MANUAL = "manual"
 
 /** Manda el avance de una visita al PC. Solo se da por enviado cuando el PC responde "ok". */
 class EnviarAvanceWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
@@ -81,14 +87,19 @@ object Planificador {
             SYNC_AHORA, ExistingWorkPolicy.REPLACE,
             OneTimeWorkRequestBuilder<SincronizarWorker>()
                 .setConstraints(conRed)
+                .setInputData(workDataOf(CLAVE_MANUAL to true))
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
                 .build(),
         )
     }
 
-    fun enviarAvance(context: Context, idVisita: String) {
+    /**
+     * Encola el envío del avance. Con [reintentarYa] sustituye un envío que esté esperando entre
+     * reintentos (botón Sincronizar); si no, se respeta el que ya haya en cola.
+     */
+    fun enviarAvance(context: Context, idVisita: String, reintentarYa: Boolean = false) {
         WorkManager.getInstance(context).enqueueUniqueWork(
-            "avance-$idVisita", ExistingWorkPolicy.KEEP,
+            "avance-$idVisita", if (reintentarYa) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP,
             OneTimeWorkRequestBuilder<EnviarAvanceWorker>()
                 .setConstraints(conRed)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)

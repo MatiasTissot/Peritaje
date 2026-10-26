@@ -60,10 +60,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk peritaje.apk
+          # El nombre del archivo lleva la versión (versionName de app/build.gradle.kts).
+          version=$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' app/build.gradle.kts)
+          apk="peritaje-${version}.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$apk"
           gh release delete ultima -y --cleanup-tag || true
-          gh release create ultima peritaje.apk --title "Última versión" --prerelease \
-            --notes "APK de prueba compilado desde ${GITHUB_SHA::7}. Instalar encima de la versión anterior."
+          gh release create ultima "$apk" --title "Versión ${version}" --prerelease \
+            --notes "APK ${version} compilado desde ${GITHUB_SHA::7}. Instalar encima de la versión anterior."
 
   servidor:
     # 22.04 todavía ofrece Python 3.8, la versión mínima que admite el PC (Xubuntu 20.04).

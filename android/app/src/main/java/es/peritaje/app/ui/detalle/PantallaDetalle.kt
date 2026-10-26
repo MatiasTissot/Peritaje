@@ -219,7 +219,7 @@ fun PantallaDetalle(vm: DetalleViewModel, volver: () -> Unit, irA: (String) -> U
             return@Scaffold
         }
         Column(Modifier.padding(relleno).fillMaxSize()) {
-            BandaEstado(c, fotos.size)
+            BandaEstado(c, fotos.size, reintentar = { vm.reintentarEnvio() })
             AvisoNotion(c, entendido = { vm.quitarAviso() }, descartar = { confirmarDescarte = true })
             PrimaryTabRow(selectedTabIndex = pestana) {
                 listOf("Datos", "Visita", "Fotos (${fotos.size})").forEachIndexed { i, t ->
@@ -346,11 +346,11 @@ private fun camposVacios(c: Cita): List<String> = buildList {
 }
 
 @Composable
-private fun BandaEstado(c: Cita, numFotos: Int) {
+private fun BandaEstado(c: Cita, numFotos: Int, reintentar: () -> Unit) {
     val s = situacion(c, numFotos)
     val texto = when (c.estado) {
         EstadoCita.PENDIENTE -> null
-        EstadoCita.VISITADA -> c.ultimoError?.let { "No se pudo enviar: $it. Se reintentará solo." }
+        EstadoCita.VISITADA -> c.ultimoError?.let { "No se pudo enviar: $it" }
             ?: "Visita finalizada. Enviando el avance al PC…"
         EstadoCita.ENVIADA -> "Avance enviado a Notion el ${c.fechaEnvio?.let { Repositorio.fechaHoraLegible(it) } ?: ""}"
     } ?: return
@@ -359,7 +359,11 @@ private fun BandaEstado(c: Cita, numFotos: Int) {
             IconoEstado(s)
             Spacer(Modifier.width(12.dp))
             Text(texto, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            Icon(Icons.Filled.Lock, contentDescription = "Bloqueada", tint = s.color)
+            if (c.estado == EstadoCita.VISITADA) {
+                TextButton(onClick = reintentar, modifier = Modifier.height(48.dp)) { Text("Reintentar ahora") }
+            } else {
+                Icon(Icons.Filled.Lock, contentDescription = "Bloqueada", tint = s.color)
+            }
         }
     }
 }
@@ -684,7 +688,7 @@ private fun PestanaFotos(
         }
         if (fotos.isEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                Text("Aún no hay fotos. Se guardan en la galería, en Pictures/PeritajeApp/<expediente>/Visita_<fecha>/.",
+                Text("Aún no hay fotos. Se guardan en la galería, en Pictures/PeritajeApp/<mes>/<expediente>/Visita_<fecha>/.",
                     style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(8.dp))
             }
         }
