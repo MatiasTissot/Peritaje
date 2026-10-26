@@ -1,6 +1,6 @@
 """Configuración del servidor, leída de variables de entorno.
 
-Las credenciales (token de Notion y token de la app) nunca van en el código ni
+Las credenciales (token de Notion, token de la app y autorización de Google Drive) nunca van en el código ni
 en git: se cargan desde /etc/peritaje/peritaje.env (ver deploy/) con permisos 640.
 """
 from __future__ import annotations
@@ -33,6 +33,17 @@ class Config:
     # Estados de encargo que no se mandan al móvil aunque tengan visita.
     estados_excluidos: tuple = ("ANULADO", "PNDT ANULADO")
     dir_datos: Path = field(default_factory=lambda: Path("./datos"))
+    # Google Drive (fotos). Opcional: sin refresh token el PC no acepta fotos todavía.
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_refresh_token: str = ""
+    # Id de la carpeta Expedientes_2026; si va vacío se busca por nombre en "Mi unidad".
+    drive_carpeta_raiz: str = ""
+    drive_nombre_raiz: str = "Expedientes_2026"
+
+    @property
+    def drive_configurado(self) -> bool:
+        return bool(self.google_client_id and self.google_client_secret and self.google_refresh_token)
 
 
 def cargar() -> Config:
@@ -49,4 +60,9 @@ def cargar() -> Config:
         titulo_avance=os.environ.get("TITULO_AVANCE", "AVANCE APP"),
         estados_excluidos=tuple(e.strip() for e in excluidos.split(",") if e.strip()),
         dir_datos=Path(os.environ.get("DIR_DATOS", "./datos")),
+        google_client_id=os.environ.get("GOOGLE_CLIENT_ID", "").strip(),
+        google_client_secret=os.environ.get("GOOGLE_CLIENT_SECRET", "").strip(),
+        google_refresh_token=os.environ.get("GOOGLE_REFRESH_TOKEN", "").strip(),
+        drive_carpeta_raiz=os.environ.get("DRIVE_CARPETA_RAIZ", "").strip(),
+        drive_nombre_raiz=os.environ.get("DRIVE_NOMBRE_RAIZ", "Expedientes_2026").strip() or "Expedientes_2026",
     )
