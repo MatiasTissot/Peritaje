@@ -79,8 +79,9 @@ class AjustesViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             probando = true
             resultado = try {
-                val estado = repo.probarConexion(url, token)
-                if (estado == "ok") "Conexión correcta con el PC" else "El PC respondió: $estado"
+                val salud = repo.probarConexion(url, token)
+                val version = salud.version?.let { " · servidor v$it" } ?: " · servidor sin versión (actualízalo)"
+                if (salud.estado == "ok") "Conexión correcta con el PC$version" else "El PC respondió: ${salud.estado}$version"
             } catch (e: retrofit2.HttpException) {
                 if (e.code() == 401) "El PC rechaza el token" else "Error del PC (${e.code()})"
             } catch (e: Exception) {
@@ -151,7 +152,7 @@ fun PantallaAjustes(vm: AjustesViewModel, volver: () -> Unit) {
                 modifier = Modifier.fillMaxWidth().height(56.dp),
             ) { Text("Guardar") }
             vm.resultado?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
-            Text("Versión ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium,
+            Text("App v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

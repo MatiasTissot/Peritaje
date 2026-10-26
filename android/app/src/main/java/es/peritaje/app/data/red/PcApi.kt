@@ -117,6 +117,8 @@ data class ContactoNuevo(
 data class RespuestaEstado(
     val estado: String,
     val detalle: String? = null,
+    /** Versión del servidor del PC (en /salud). */
+    val version: String? = null,
 )
 
 @Serializable

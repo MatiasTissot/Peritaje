@@ -73,8 +73,8 @@ class Repositorio(
     /** Cliente hacia el PC para la subida de fotos (ver data.fotos.SubidaFotos). */
     suspend fun apiFotos(): PcApi = api(paraFotos = true)
 
-    suspend fun probarConexion(url: String, t: String): String =
-        FabricaApi.crear(normalizarUrl(url), t.trim()).salud().estado
+    suspend fun probarConexion(url: String, t: String): RespuestaEstado =
+        FabricaApi.crear(normalizarUrl(url), t.trim()).salud()
 
     // --- sincronización (GET /citas-index + /citas/{id}) -----------------
 
