@@ -5,12 +5,16 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
+import okhttp3.RequestBody
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.Header
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Path
+import retrofit2.http.Query
 import java.util.concurrent.TimeUnit
 
 /** Contrato PC <-> app (ver especificación, sección "Contrato PC ↔ app"). */
@@ -31,6 +35,20 @@ interface PcApi {
 
     @POST("avance")
     suspend fun avance(@Body avance: Avance): RespuestaEstado
+
+    /**
+     * Manda una foto al PC, que la sube a Drive en la carpeta del encargo
+     * (Fotografias/Visita_<fechaVisita>). "ok" solo cuando Drive la ha confirmado; reenviar la
+     * misma foto no la duplica (el PC la reconoce por su [sha256]).
+     */
+    @PUT("fotos")
+    suspend fun foto(
+        @Query("id_encargo") idEncargo: String,
+        @Query("fecha_visita") fechaVisita: String,
+        @Query("nombre") nombre: String,
+        @Header("X-Sha256") sha256: String,
+        @Body foto: RequestBody,
+    ): RespuestaFoto
 }
 
 @Serializable
@@ -99,6 +117,13 @@ data class RespuestaEstado(
     val detalle: String? = null,
 )
 
+@Serializable
+data class RespuestaFoto(
+    val estado: String,
+    val detalle: String? = null,
+    @SerialName("id_drive") val idDrive: String? = null,
+)
+
 val JsonApp = Json {
     ignoreUnknownKeys = true
     explicitNulls = false
@@ -115,9 +140,16 @@ object FabricaApi {
             .build()
     }
 
-    fun crear(urlPc: String, token: String): PcApi {
+    /**
+     * Con [paraFotos] se da más margen de espera: el PC responde cuando Drive ha recibido la
+     * foto entera, y con poca cobertura enviar unos MB puede tardar.
+     */
+    fun crear(urlPc: String, token: String, paraFotos: Boolean = false): PcApi {
         val base = urlPc.trim().let { if (it.endsWith("/")) it else "$it/" }
         val cliente = http.newBuilder()
+            .apply {
+                if (paraFotos) readTimeout(3, TimeUnit.MINUTES).writeTimeout(3, TimeUnit.MINUTES)
+            }
             .addInterceptor { cadena ->
                 cadena.proceed(
                     cadena.request().newBuilder()

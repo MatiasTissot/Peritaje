@@ -9,7 +9,7 @@ import androidx.room.PrimaryKey
 
 enum class EstadoCita { PENDIENTE, VISITADA, ENVIADA }
 
-/** Estado de subida a Drive. Hasta que exista el módulo de Drive, todas quedan en PENDIENTE. */
+/** Estado de subida a Drive (a través del PC). SUBIDA solo cuando Drive ha confirmado la foto entera. */
 enum class EstadoSubida { PENDIENTE, SUBIENDO, SUBIDA, ERROR }
 
 /**
@@ -102,6 +102,11 @@ data class FotoPendiente(
      * para que la numeración no se repita y para no perder nunca una foto.
      */
     @ColumnInfo(defaultValue = "0") val quitada: Boolean = false,
+    /** Id del archivo en Google Drive, cuando ya está subida. */
+    val idDrive: String? = null,
+    val fechaSubida: Long? = null,
+    /** Motivo del último fallo de subida (se reintenta solo). */
+    val errorSubida: String? = null,
 )
 
 /**

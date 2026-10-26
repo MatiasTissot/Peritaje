@@ -43,6 +43,9 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Directions
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
@@ -100,6 +103,7 @@ import es.peritaje.app.data.Repositorio
 import es.peritaje.app.data.db.Cita
 import es.peritaje.app.data.db.ContactoVisita
 import es.peritaje.app.data.db.EstadoCita
+import es.peritaje.app.data.db.EstadoSubida
 import es.peritaje.app.data.db.FotoPendiente
 import es.peritaje.app.ui.comun.IconoEstado
 import es.peritaje.app.ui.comun.situacion
@@ -686,6 +690,9 @@ private fun PestanaFotos(
                 }
             }
         }
+        if (!editable && fotos.isNotEmpty()) {
+            item(span = { GridItemSpan(maxLineSpan) }) { ResumenDrive(fotos) }
+        }
         if (fotos.isEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Text("Aún no hay fotos. Se guardan en la galería, en Pictures/PeritajeApp/<mes>/<expediente>/Visita_<fecha>/.",
@@ -704,7 +711,37 @@ private fun PestanaFotos(
                         .combinedClickable(onClick = { abrir(f) }, onLongClick = { if (editable) borrar(f) }),
                 )
                 Text(f.nombreArchivo, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                if (!editable) EstadoDrive(f)
             }
         }
+    }
+}
+
+/** Cuántas fotos de la visita están ya en Drive y, si algo falla, por qué. */
+@Composable
+private fun ResumenDrive(fotos: List<FotoPendiente>) {
+    val subidas = fotos.count { it.estadoSubida == EstadoSubida.SUBIDA }
+    val error = fotos.firstOrNull { it.estadoSubida != EstadoSubida.SUBIDA && it.errorSubida != null }?.errorSubida
+    val texto = when {
+        subidas == fotos.size -> "Todas las fotos están en Drive ($subidas)."
+        error != null -> "En Drive: $subidas de ${fotos.size}. Último fallo: $error. Se reintenta solo; " +
+            "las fotos siguen a salvo en el móvil."
+        else -> "Subiendo a Drive: $subidas de ${fotos.size}…"
+    }
+    Text(texto, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(4.dp))
+}
+
+@Composable
+private fun EstadoDrive(f: FotoPendiente) {
+    val (icono, texto, color) = when (f.estadoSubida) {
+        EstadoSubida.SUBIDA -> Triple(Icons.Filled.CloudDone, "En Drive", MaterialTheme.colorScheme.primary)
+        EstadoSubida.ERROR -> Triple(Icons.Filled.CloudOff, "No se puede subir", MaterialTheme.colorScheme.error)
+        else -> Triple(Icons.Filled.CloudUpload, if (f.errorSubida != null) "Reintentando" else "Pendiente",
+            MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(icono, contentDescription = null, tint = color, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(4.dp))
+        Text(texto, style = MaterialTheme.typography.labelSmall, color = color, maxLines = 1)
     }
 }
