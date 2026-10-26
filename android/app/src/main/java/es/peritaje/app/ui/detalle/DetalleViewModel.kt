@@ -129,6 +129,13 @@ class DetalleViewModel(app: Application, val id: String) : AndroidViewModel(app)
 
     fun limpiarMensaje() { mensaje = null }
 
+    /** Fuerza el reenvío del avance ya, sin esperar al siguiente reintento automático. */
+    fun reintentarEnvio() {
+        if (cita.value?.estado != EstadoCita.VISITADA) return
+        Planificador.enviarAvance(getApplication(), id, reintentarYa = true)
+        mensaje = "Reenviando el avance al PC…"
+    }
+
     fun quitarAviso() {
         contenedor.ambito.launch { repo.quitarAviso(id) }
     }
