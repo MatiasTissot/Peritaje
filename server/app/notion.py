@@ -36,7 +36,7 @@ class Notion:
         # no se procesó). Ante 5xx o fallo de red solo se reintentan las lecturas: una
         # escritura (PATCH) puede haberse aplicado aunque la respuesta falle, y repetirla
         # duplicaría el avance.
-        escritura = metodo.upper() == "PATCH"
+        escritura = metodo.upper() == "PATCH" or ruta == "/pages"
         for intento in range(4):
             try:
                 r = self._http.request(metodo, ruta, **kw)
@@ -82,6 +82,10 @@ class Notion:
             if not datos.get("has_more"):
                 return resultados
             cursor = datos["next_cursor"]
+
+    def crear_pagina(self, db_id: str, propiedades: dict) -> dict:
+        """Crea una fila (página) en una base de datos."""
+        return self._pedir("POST", "/pages", json={"parent": {"database_id": db_id}, "properties": propiedades})
 
     def anadir_hijos(self, block_id: str, bloques: list[dict], after: str | None = None) -> dict:
         """Añade bloques al final de block_id, o justo debajo del bloque `after`."""

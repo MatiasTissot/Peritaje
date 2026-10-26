@@ -78,6 +78,17 @@ class FakeNotion:
     def hijos(self, bid):
         return self.bloques.get(bid, [])
 
+    def crear_pagina(self, db, props):
+        assert db == "C"
+        pagina = {"id": f"c-nuevo-{len(self.contactos)}", "properties": {
+            k: ({"type": "relation", "relation": v["relation"]} if "relation" in v
+                else {"type": "select", "select": v["select"]} if "select" in v
+                else {"type": "title", "title": rt(v["title"][0]["text"]["content"])} if "title" in v
+                else {"type": "rich_text", "rich_text": rt(v["rich_text"][0]["text"]["content"])})
+            for k, v in props.items()}}
+        self.contactos.append(pagina)
+        return pagina
+
     def anadir_hijos(self, bid, bloques, after=None):
         self.anadidos.append((bid, bloques, after))
         for b in bloques:
@@ -311,3 +322,31 @@ def test_avance_con_visita_borrada_se_escribe_igual(entorno):
     r = cliente.post("/avance", headers=H, json={"id_encargo": "MA26043441", "id_visita": "c" * 32,
                      "fecha_visita_realizada": "2026-09-28T10:15:00", "texto_avance": "x"})
     assert r.json() == {"estado": "ok"} and len(fake.anadidos) == 1
+
+
+def test_avance_crea_contactos_nuevos_sin_duplicar(entorno):
+    cliente, fake, _ = entorno
+    cuerpo = {"id_encargo": "MA26043441", "fecha_visita_realizada": "2026-09-28T10:15:00",
+              "texto_avance": "x", "contactos": [
+                  {"rol": "Inquilino", "nombre": "Ana Ruiz", "telefono": "699 111 222"},
+                  {"rol": "Asegurado", "nombre": "Juan Pérez", "telefono": "600123456"},  # ya existe
+                  {"rol": "Causante", "nombre": "  "}]}  # sin nombre: se ignora
+    assert cliente.post("/avance", json=cuerpo, headers=H).json() == {"estado": "ok"}
+    nuevos = [c for c in fake.contactos if c["id"].startswith("c-nuevo")]
+    assert len(nuevos) == 1
+    p = nuevos[0]["properties"]
+    assert p["Rol"]["select"]["name"] == "Inquilino" and p["Encargo"]["relation"] == [{"id": "p1"}]
+    assert p["Contacto"]["title"][0]["plain_text"] == "Inquilino - Ana Ruiz"
+    # Un reintento no los vuelve a crear.
+    cuerpo["contactos"][0]["telefono"] = "699111222"
+    assert cliente.post("/avance", json=cuerpo, headers=H).json() == {"estado": "ok"}
+    assert len([c for c in fake.contactos if c["id"].startswith("c-nuevo")]) == 1
+
+
+def test_avance_encuentra_bloque_avance_apk(entorno):
+    cliente, fake, _ = entorno
+    fake.bloques["p1"] = [{"id": "b-apk", "type": "toggle", "has_children": False,
+                           "toggle": {"rich_text": rt("Avance APK")}}]
+    cliente.post("/avance", headers=H, json={"id_encargo": "MA26043441",
+                 "fecha_visita_realizada": "2026-09-28T10:15:00", "texto_avance": "x"})
+    assert fake.anadidos[0][0] == "b-apk"

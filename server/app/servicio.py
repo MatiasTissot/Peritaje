@@ -64,6 +64,15 @@ def _vacio_a_none(s):
     return s if s else None
 
 
+def _clave(s) -> str:
+    """Para comparar contactos: sin mayúsculas ni espacios."""
+    return "".join((s or "").split()).lower()
+
+
+def _rico(texto: str) -> list:
+    return [{"type": "text", "text": {"content": texto[:1900]}}]
+
+
 def _sin_guiones(page_id: str) -> str:
     return page_id.replace("-", "")
 
@@ -288,25 +297,53 @@ class Servicio:
         tmp.replace(self._registro)
 
     def _buscar_destino(self, page_id: str) -> tuple[str, str | None] | None:
-        """Busca el bloque titulado AVANCE APP (pestaña, desplegable o encabezado).
+        """Busca el bloque titulado AVANCE APP o AVANCE APK (pestaña, desplegable o encabezado).
 
         Devuelve (padre, after): se añaden hijos a `padre`; si `after` no es None,
         se insertan justo debajo de ese bloque (caso de encabezado normal).
         """
-        objetivo = self.cfg.titulo_avance.strip().upper()
+        objetivos = {self.cfg.titulo_avance.strip().upper(), "AVANCE APP", "AVANCE APK"}
         pendientes = [(page_id, 0)]
         while pendientes:
             padre, nivel = pendientes.pop(0)
             for b in self.notion.hijos(padre):
                 tipo = b.get("type", "")
                 datos = b.get(tipo, {}) or {}
-                if _texto(datos.get("rich_text")).upper() == objetivo:
+                if _texto(datos.get("rich_text")).upper() in objetivos:
                     if tipo in _CONTENEDORES or datos.get("is_toggleable"):
                         return b["id"], None
                     return padre, b["id"]
                 if b.get("has_children") and nivel < 3 and (tipo in _CONTENEDORES or tipo == "tab"):
                     pendientes.append((b["id"], nivel + 1))
         return None
+
+    def _crear_contactos(self, page_id: str, contactos: list[dict]):
+        relacion = {"property": "Encargo", "relation": {"contains": page_id}}
+        existentes = {
+            (_clave(prop(c, "Nombre")), _clave(prop(c, "Telefono")))
+            for c in self.notion.consultar(self.cfg.db_contactos, relacion)
+        }
+        for c in contactos:
+            nombre = (c.get("nombre") or "").strip()
+            if not nombre:
+                continue
+            clave = (_clave(nombre), _clave(c.get("telefono")))
+            if clave in existentes:
+                continue
+            rol = (c.get("rol") or "Otro").strip() or "Otro"
+            props = {
+                "Contacto": {"title": _rico(f"{rol} - {nombre}")},
+                "Nombre": {"rich_text": _rico(nombre)},
+                "Rol": {"select": {"name": rol}},
+                "Encargo": {"relation": [{"id": page_id}]},
+            }
+            for campo, columna in (("telefono", "Telefono"), ("email", "Email"), ("dni", "DNI_CIF"),
+                                   ("direccion", "Direccion"), ("notas", "Notas_Contacto")):
+                valor = (c.get(campo) or "").strip()
+                if valor:
+                    props[columna] = {"rich_text": _rico(valor)}
+            self.notion.crear_pagina(self.cfg.db_contactos, props)
+            existentes.add(clave)
 
     def _ya_en_notion(self, padre: str, ref: str) -> bool:
         for b in self.notion.hijos(padre):
@@ -339,11 +376,16 @@ class Servicio:
         ]}}
 
     def escribir_avance(self, id_encargo: str, fecha_visita_realizada: str, texto: str,
-                        id_envio: str | None = None, id_visita: str | None = None) -> str:
+                        id_envio: str | None = None, id_visita: str | None = None,
+                        contactos: list[dict] | None = None) -> str:
         with self._lock:
             if id_envio and self._ya_enviado(id_envio):
                 return "ya_registrado"
             encargo = self._resolver(id_encargo, exacto=True)
+            # Primero los contactos: si algo falla, la app reintenta todo y los ya creados
+            # no se duplican (se comparan con los que ya tiene el encargo).
+            if contactos:
+                self._crear_contactos(encargo["id"], contactos)
             try:
                 visita = self._a_local(fecha_visita_realizada).strftime("%d/%m/%Y %H:%M")
             except ValueError:
