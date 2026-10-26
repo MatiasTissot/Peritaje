@@ -13,6 +13,7 @@ import es.peritaje.app.data.red.DetalleCita
 import es.peritaje.app.data.red.FabricaApi
 import es.peritaje.app.data.red.JsonApp
 import es.peritaje.app.data.red.PcApi
+import es.peritaje.app.data.red.RespuestaEstado
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.builtins.ListSerializer
 import retrofit2.HttpException
